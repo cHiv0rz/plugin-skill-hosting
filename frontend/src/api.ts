@@ -29,6 +29,26 @@ export interface Skill {
   body: string
   createdAt: string
   updatedAt: string
+  createdBy?: string
+  createdByName?: string
+  updatedBy?: string
+  updatedByName?: string
+  deletedAt?: string
+  deletedBy?: string
+  deletedByName?: string
+}
+
+export interface SkillVersion {
+  id: string
+  skillId: string
+  version: number
+  action: 'create' | 'update' | 'delete' | 'restore' | 'revert'
+  name: string
+  description: string
+  body: string
+  editedBy?: string
+  editedByName?: string
+  editedAt: string
 }
 
 function token(): string | null {
@@ -95,5 +115,17 @@ export const api = {
   deleteSkill: (pluginName: string, skillName: string) =>
     request<void>(`/api/plugins/${pluginName}/skills/${skillName}`, {
       method: 'DELETE',
+    }),
+  listDeletedSkills: (pluginName: string) =>
+    request<Skill[]>(`/api/plugins/${pluginName}/deleted-skills`),
+  restoreSkill: (pluginName: string, skillName: string) =>
+    request<Skill>(`/api/plugins/${pluginName}/skills/${skillName}/restore`, {
+      method: 'POST',
+    }),
+  skillVersions: (pluginName: string, skillName: string) =>
+    request<SkillVersion[]>(`/api/plugins/${pluginName}/skills/${skillName}/versions`),
+  revertSkill: (pluginName: string, skillName: string, version: number) =>
+    request<Skill>(`/api/plugins/${pluginName}/skills/${skillName}/revert/${version}`, {
+      method: 'POST',
     }),
 }

@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { api, type Plugin } from '../api'
+import { api, type Plugin, type Skill } from '../api'
 import { useAuthStore } from '../stores/auth'
+import { useConfirm } from '../composables/useConfirm'
+
+const { confirm } = useConfirm()
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const plugin = ref<Plugin | null>(null)
+const deletedSkills = ref<Skill[]>([])
 const loading = ref(true)
 const error = ref('')
 const copied = ref('')
@@ -15,6 +19,7 @@ const copied = ref('')
 const isOwner = computed(() =>
   !!(plugin.value && auth.user && plugin.value.ownerId === auth.user.id),
 )
+const isAuthed = computed(() => !!auth.user)
 
 const installCmd = computed(() => {
   if (!plugin.value) return ''
@@ -23,6 +28,11 @@ const installCmd = computed(() => {
     ? `/plugin install ${plugin.value.name}@${market}`
     : `/plugin install ${plugin.value.name}`
 })
+
+function fmt(d?: string | null) {
+  if (!d) return ''
+  return new Date(d).toLocaleString()
+}
 
 async function copy(text: string, label: string) {
   try {
@@ -36,7 +46,9 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    plugin.value = await api.getPlugin(route.params.name as string)
+    const name = route.params.name as string
+    plugin.value = await api.getPlugin(name)
+    deletedSkills.value = await api.listDeletedSkills(name)
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -46,7 +58,13 @@ async function load() {
 
 async function deleteSkill(name: string) {
   if (!plugin.value) return
-  if (!confirm(`Delete skill "${name}"?`)) return
+  const ok = await confirm({
+    title: 'Delete skill',
+    message: `Delete skill "${name}"? You can restore it later from the Deleted skills section.`,
+    confirmLabel: 'Delete',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await api.deleteSkill(plugin.value.name, name)
     await load()
@@ -55,9 +73,25 @@ async function deleteSkill(name: string) {
   }
 }
 
+async function restoreSkill(name: string) {
+  if (!plugin.value) return
+  try {
+    await api.restoreSkill(plugin.value.name, name)
+    await load()
+  } catch (e: any) {
+    error.value = e.message
+  }
+}
+
 async function deletePlugin() {
   if (!plugin.value) return
-  if (!confirm(`Delete plugin "${plugin.value.name}" and all its skills?`)) return
+  const ok = await confirm({
+    title: 'Delete plugin',
+    message: `Delete plugin "${plugin.value.name}" and all its skills? This cannot be undone.`,
+    confirmLabel: 'Delete plugin',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await api.deletePlugin(plugin.value.name)
     router.push('/')
@@ -102,7 +136,7 @@ onMounted(() => {
         <h2 style="margin: 0">Skills</h2>
         <div class="spacer" />
         <RouterLink
-          v-if="isOwner"
+          v-if="isAuthed"
           :to="`/plugins/${plugin.name}/skills/new`"
           class="btn"
         >+ New skill</RouterLink>
@@ -115,21 +149,67 @@ onMounted(() => {
           <tr>
             <th>Name</th>
             <th>Description</th>
-            <th v-if="isOwner"></th>
+            <th>Created</th>
+            <th>Last edited</th>
+            <th v-if="isAuthed"></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="s in plugin.skills" :key="s.id">
             <td>
               <RouterLink
-                v-if="isOwner"
+                v-if="isAuthed"
                 :to="`/plugins/${plugin.name}/skills/${s.name}/edit`"
               >{{ s.name }}</RouterLink>
               <span v-else>{{ s.name }}</span>
             </td>
             <td>{{ s.description }}</td>
-            <td v-if="isOwner" style="text-align: right">
+            <td class="muted" style="white-space: nowrap">
+              <span v-if="s.createdByName">{{ s.createdByName }}</span>
+              <span v-else>—</span>
+              <br />
+              <small>{{ fmt(s.createdAt) }}</small>
+            </td>
+            <td class="muted" style="white-space: nowrap">
+              <span v-if="s.updatedByName">{{ s.updatedByName }}</span>
+              <span v-else>—</span>
+              <br />
+              <small>{{ fmt(s.updatedAt) }}</small>
+            </td>
+            <td v-if="isAuthed" style="text-align: right">
               <button class="secondary" @click="deleteSkill(s.name)">Delete</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div v-if="deletedSkills.length > 0" class="card">
+      <h2>Deleted skills</h2>
+      <p class="muted" style="margin-top: 0">
+        Soft-deleted; restore to bring them back into the plugin.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Deleted</th>
+            <th v-if="isAuthed"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="s in deletedSkills" :key="s.id">
+            <td>{{ s.name }}</td>
+            <td>{{ s.description }}</td>
+            <td class="muted" style="white-space: nowrap">
+              <span v-if="s.deletedByName">{{ s.deletedByName }}</span>
+              <span v-else>—</span>
+              <br />
+              <small>{{ fmt(s.deletedAt) }}</small>
+            </td>
+            <td v-if="isAuthed" style="text-align: right">
+              <button class="secondary" @click="restoreSkill(s.name)">Restore</button>
             </td>
           </tr>
         </tbody>
@@ -145,7 +225,7 @@ onMounted(() => {
           <tr v-if="plugin.authorEmail"><th>Email</th><td>{{ plugin.authorEmail }}</td></tr>
           <tr v-if="plugin.homepage"><th>Homepage</th><td><a :href="plugin.homepage" target="_blank">{{ plugin.homepage }}</a></td></tr>
           <tr v-if="plugin.license"><th>License</th><td>{{ plugin.license }}</td></tr>
-          <tr><th>Updated</th><td>{{ new Date(plugin.updatedAt).toLocaleString() }}</td></tr>
+          <tr><th>Updated</th><td>{{ fmt(plugin.updatedAt) }}</td></tr>
         </tbody>
       </table>
     </div>

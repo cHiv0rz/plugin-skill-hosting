@@ -38,13 +38,33 @@ type Plugin struct {
 }
 
 type Skill struct {
-	ID          string    `json:"id"`
-	PluginID    string    `json:"pluginId"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Body        string    `json:"body"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID            string     `json:"id"`
+	PluginID      string     `json:"pluginId"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	Body          string     `json:"body"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
+	CreatedBy     *string    `json:"createdBy,omitempty"`
+	CreatedByName *string    `json:"createdByName,omitempty"`
+	UpdatedBy     *string    `json:"updatedBy,omitempty"`
+	UpdatedByName *string    `json:"updatedByName,omitempty"`
+	DeletedAt     *time.Time `json:"deletedAt,omitempty"`
+	DeletedBy     *string    `json:"deletedBy,omitempty"`
+	DeletedByName *string    `json:"deletedByName,omitempty"`
+}
+
+type SkillVersion struct {
+	ID           string    `json:"id"`
+	SkillID      string    `json:"skillId"`
+	Version      int       `json:"version"`
+	Action       string    `json:"action"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	Body         string    `json:"body"`
+	EditedBy     *string   `json:"editedBy,omitempty"`
+	EditedByName *string   `json:"editedByName,omitempty"`
+	EditedAt     time.Time `json:"editedAt"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

@@ -144,6 +144,10 @@ func main() {
 			r.Post("/plugins/{name}/skills", app.handleCreateSkill)
 			r.Put("/plugins/{name}/skills/{skill}", app.handleUpdateSkill)
 			r.Delete("/plugins/{name}/skills/{skill}", app.handleDeleteSkill)
+			r.Get("/plugins/{name}/deleted-skills", app.handleListDeletedSkills)
+			r.Post("/plugins/{name}/skills/{skill}/restore", app.handleRestoreSkill)
+			r.Get("/plugins/{name}/skills/{skill}/versions", app.handleListSkillVersions)
+			r.Post("/plugins/{name}/skills/{skill}/revert/{version}", app.handleRevertSkill)
 		})
 	})
 

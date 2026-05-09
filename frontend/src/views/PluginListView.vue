@@ -3,6 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { api, type Plugin } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { RouterLink } from 'vue-router'
+import { useConfirm } from '../composables/useConfirm'
+
+const { confirm } = useConfirm()
 
 const auth = useAuthStore()
 const plugins = ref<Plugin[]>([])
@@ -40,7 +43,13 @@ async function load() {
 }
 
 async function regenerate() {
-  if (!confirm('Regenerate your API token? Existing marketplace links will stop working until you update them.')) return
+  const ok = await confirm({
+    title: 'Regenerate API token',
+    message: 'Existing marketplace links will stop working until you update them. Continue?',
+    confirmLabel: 'Regenerate',
+    danger: true,
+  })
+  if (!ok) return
   tokenError.value = ''
   regenerating.value = true
   try {

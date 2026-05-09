@@ -18,6 +18,9 @@ var migration0002 string
 //go:embed migrations/0003_api_token.sql
 var migration0003 string
 
+//go:embed migrations/0004_skill_audit.sql
+var migration0004 string
+
 func openDB(url string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", url)
 	if err != nil {
@@ -41,6 +44,9 @@ func runMigrations(db *sql.DB) error {
 	}
 	if _, err := db.Exec(migration0003); err != nil {
 		return fmt.Errorf("0003_api_token: %w", err)
+	}
+	if _, err := db.Exec(migration0004); err != nil {
+		return fmt.Errorf("0004_skill_audit: %w", err)
 	}
 	return nil
 }

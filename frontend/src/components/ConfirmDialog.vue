@@ -63,7 +63,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 .confirm-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.65);
+  -webkit-backdrop-filter: blur(2px);
+          backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -71,30 +73,44 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   padding: 20px;
 }
 .confirm-dialog {
-  background: var(--panel);
+  position: relative;
+  background: linear-gradient(180deg, rgba(20, 24, 31, 0.95), rgba(14, 17, 24, 0.95));
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 22px 22px 18px;
+  border-radius: 0;
+  padding: 26px 28px 22px;
   width: 100%;
-  max-width: 440px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  max-width: 460px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+}
+.confirm-dialog::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent);
 }
 .confirm-title {
-  margin: 0 0 8px;
-  font-size: 16px;
-  font-weight: 600;
+  margin: 0 0 10px;
+  font-family: 'Fraunces Variable', 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-weight: 380;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--text);
 }
 .confirm-message {
-  margin: 0 0 18px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.45;
+  margin: 0 0 22px;
+  color: var(--text-soft);
+  font-size: 13.5px;
+  line-height: 1.55;
   white-space: pre-wrap;
 }
 .confirm-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
 }
 
 .confirm-enter-active,

@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import NavBar from './components/NavBar.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import { useAuthStore } from './stores/auth'
+import { useRoute } from 'vue-router'
 
 const auth = useAuthStore()
+const route = useRoute()
+const hideChrome = computed(() => Boolean(route.meta?.hideChrome))
 
 onMounted(() => {
   if (auth.token && !auth.user?.apiToken) {
@@ -14,9 +17,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <NavBar />
-  <main>
+  <template v-if="hideChrome">
     <RouterView />
-  </main>
+  </template>
+  <template v-else>
+    <NavBar />
+    <main>
+      <RouterView />
+    </main>
+  </template>
   <ConfirmDialog />
 </template>

@@ -13,7 +13,7 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: PluginListView, meta: { requiresAuth: true } },
-    { path: '/login', component: LoginView },
+    { path: '/login', component: LoginView, meta: { hideChrome: true } },
     { path: '/register', component: RegisterView },
     { path: '/auth/callback', component: OIDCCallbackView },
     { path: '/plugins/new', component: NewPluginView, meta: { requiresAuth: true } },

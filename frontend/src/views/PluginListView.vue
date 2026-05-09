@@ -9,11 +9,17 @@ const { confirm } = useConfirm()
 
 const auth = useAuthStore()
 const plugins = ref<Plugin[]>([])
+const deletedPlugins = ref<Plugin[]>([])
 const loading = ref(true)
 const error = ref('')
 const tokenError = ref('')
 const regenerating = ref(false)
 const copied = ref('')
+
+function fmt(d?: string | null) {
+  if (!d) return ''
+  return new Date(d).toLocaleString()
+}
 
 const apiToken = computed(() => auth.user?.apiToken ?? '')
 
@@ -33,11 +39,25 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    plugins.value = await api.listPlugins()
+    const [active, deleted] = await Promise.all([
+      api.listPlugins(),
+      auth.user ? api.listDeletedPlugins() : Promise.resolve([] as Plugin[]),
+    ])
+    plugins.value = active
+    deletedPlugins.value = deleted
   } catch (e: any) {
     error.value = e.message
   } finally {
     loading.value = false
+  }
+}
+
+async function restorePlugin(name: string) {
+  try {
+    await api.restorePlugin(name)
+    await load()
+  } catch (e: any) {
+    error.value = e.message
   }
 }
 
@@ -135,4 +155,37 @@ onMounted(load)
       </tr>
     </tbody>
   </table>
+
+  <div v-if="deletedPlugins.length > 0" class="card">
+    <details>
+      <summary class="muted" style="cursor: pointer">
+        Deleted plugins ({{ deletedPlugins.length }})
+      </summary>
+      <p class="muted" style="margin: 12px 0">
+        Soft-deleted; restore to put them back in the marketplace.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Deleted</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in deletedPlugins" :key="p.id">
+            <td>{{ p.name }}</td>
+            <td>{{ p.description }}</td>
+            <td class="muted" style="white-space: nowrap">
+              <small>{{ fmt(p.deletedAt) }}</small>
+            </td>
+            <td style="text-align: right">
+              <button class="secondary" @click="restorePlugin(p.name)">Restore</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+  </div>
 </template>

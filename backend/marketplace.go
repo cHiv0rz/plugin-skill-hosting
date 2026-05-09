@@ -44,7 +44,7 @@ func (a *App) handleMarketplaceJSON(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := a.db.QueryContext(r.Context(), `
 		SELECT p.name, p.description, p.version, p.author_name, p.author_email, p.homepage, p.license
-		FROM plugins p ORDER BY p.name ASC
+		FROM plugins p WHERE p.deleted_at IS NULL ORDER BY p.name ASC
 	`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")

@@ -21,6 +21,9 @@ var migration0003 string
 //go:embed migrations/0004_skill_audit.sql
 var migration0004 string
 
+//go:embed migrations/0005_plugin_soft_delete.sql
+var migration0005 string
+
 func openDB(url string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", url)
 	if err != nil {
@@ -47,6 +50,9 @@ func runMigrations(db *sql.DB) error {
 	}
 	if _, err := db.Exec(migration0004); err != nil {
 		return fmt.Errorf("0004_skill_audit: %w", err)
+	}
+	if _, err := db.Exec(migration0005); err != nil {
+		return fmt.Errorf("0005_plugin_soft_delete: %w", err)
 	}
 	return nil
 }

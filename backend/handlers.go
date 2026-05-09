@@ -20,49 +20,104 @@ type createPluginReq struct {
 	License     string `json:"license"`
 }
 
-func (a *App) handleListPlugins(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.QueryContext(r.Context(), `
-		SELECT p.id, p.owner_id, u.username, p.name, p.description, p.version,
+// pluginSelectColumns lists every column queryPlugins expects, including the
+// deleted-by user join used by the restore UI.
+const pluginSelectColumns = `p.id, p.owner_id, u.username, p.name, p.description, p.version,
 		       p.author_name, p.author_email, p.homepage, p.license,
-		       p.created_at, p.updated_at
-		FROM plugins p JOIN users u ON u.id = p.owner_id
-		ORDER BY p.updated_at DESC
-	`)
+		       p.created_at, p.updated_at,
+		       p.deleted_at, p.deleted_by, du.username`
+
+const pluginFromJoin = `FROM plugins p
+		JOIN users u ON u.id = p.owner_id
+		LEFT JOIN users du ON du.id = p.deleted_by`
+
+func (a *App) queryPlugins(ctx context.Context, where string, args ...interface{}) ([]Plugin, error) {
+	q := `SELECT ` + pluginSelectColumns + ` ` + pluginFromJoin
+	if where != "" {
+		q += ` ` + where
+	}
+	rows, err := a.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	plugins := []Plugin{}
+	for rows.Next() {
+		var p Plugin
+		var deletedAt sql.NullTime
+		var deletedBy, deletedByName sql.NullString
+		if err := rows.Scan(&p.ID, &p.OwnerID, &p.OwnerName, &p.Name, &p.Description, &p.Version,
+			&p.AuthorName, &p.AuthorEmail, &p.Homepage, &p.License,
+			&p.CreatedAt, &p.UpdatedAt,
+			&deletedAt, &deletedBy, &deletedByName); err != nil {
+			return nil, err
+		}
+		if deletedAt.Valid {
+			t := deletedAt.Time
+			p.DeletedAt = &t
+		}
+		if deletedBy.Valid {
+			v := deletedBy.String
+			p.DeletedBy = &v
+		}
+		if deletedByName.Valid {
+			v := deletedByName.String
+			p.DeletedByName = &v
+		}
+		plugins = append(plugins, p)
+	}
+	return plugins, nil
+}
+
+func (a *App) handleListPlugins(w http.ResponseWriter, r *http.Request) {
+	plugins, err := a.queryPlugins(r.Context(),
+		`WHERE p.deleted_at IS NULL ORDER BY p.updated_at DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	defer rows.Close()
+	writeJSON(w, http.StatusOK, plugins)
+}
 
-	plugins := []Plugin{}
-	for rows.Next() {
-		var p Plugin
-		if err := rows.Scan(&p.ID, &p.OwnerID, &p.OwnerName, &p.Name, &p.Description, &p.Version,
-			&p.AuthorName, &p.AuthorEmail, &p.Homepage, &p.License,
-			&p.CreatedAt, &p.UpdatedAt); err != nil {
-			writeErr(w, http.StatusInternalServerError, "scan error")
-			return
-		}
-		plugins = append(plugins, p)
+// handleListDeletedPlugins returns soft-deleted plugins owned by the caller,
+// used to drive the restore UI.
+func (a *App) handleListDeletedPlugins(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	plugins, err := a.queryPlugins(r.Context(),
+		`WHERE p.deleted_at IS NOT NULL AND p.owner_id = $1 ORDER BY p.deleted_at DESC`, user.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
 	}
 	writeJSON(w, http.StatusOK, plugins)
 }
 
+// loadPluginByName returns a plugin that is currently active (not soft-deleted).
+// All write paths and the public-facing GET use this so deleted plugins are
+// invisible without an explicit restore.
 func (a *App) loadPluginByName(ctx context.Context, name string) (*Plugin, error) {
-	p := &Plugin{}
-	err := a.db.QueryRowContext(ctx, `
-		SELECT p.id, p.owner_id, u.username, p.name, p.description, p.version,
-		       p.author_name, p.author_email, p.homepage, p.license,
-		       p.created_at, p.updated_at
-		FROM plugins p JOIN users u ON u.id = p.owner_id
-		WHERE p.name = $1
-	`, name).Scan(&p.ID, &p.OwnerID, &p.OwnerName, &p.Name, &p.Description, &p.Version,
-		&p.AuthorName, &p.AuthorEmail, &p.Homepage, &p.License,
-		&p.CreatedAt, &p.UpdatedAt)
+	plugins, err := a.queryPlugins(ctx, `WHERE p.name = $1 AND p.deleted_at IS NULL`, name)
 	if err != nil {
 		return nil, err
 	}
-	return p, nil
+	if len(plugins) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &plugins[0], nil
+}
+
+// loadPluginByNameAny returns a plugin regardless of soft-delete state. Used by
+// the restore endpoint to locate the row before un-deleting it.
+func (a *App) loadPluginByNameAny(ctx context.Context, name string) (*Plugin, error) {
+	plugins, err := a.queryPlugins(ctx,
+		`WHERE p.name = $1 ORDER BY (p.deleted_at IS NULL) DESC, p.deleted_at DESC LIMIT 1`, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(plugins) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &plugins[0], nil
 }
 
 // loadSkillsForPlugin returns active (non-soft-deleted) skills with audit metadata.
@@ -275,6 +330,9 @@ func (a *App) handleCreatePlugin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// handleDeletePlugin soft-deletes the plugin: the row stays in the database but
+// the plugin is hidden from listings, the marketplace feed, and `git clone`
+// (the bare repo is wiped on disk and re-materialized on restore).
 func (a *App) handleDeletePlugin(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	name := chi.URLParam(r, "name")
@@ -291,12 +349,62 @@ func (a *App) handleDeletePlugin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "not your plugin")
 		return
 	}
-	if _, err := a.db.ExecContext(r.Context(), `DELETE FROM plugins WHERE id = $1`, p.ID); err != nil {
+	if _, err := a.db.ExecContext(r.Context(), `
+		UPDATE plugins SET deleted_at = now(), deleted_by = $1, updated_at = now()
+		WHERE id = $2
+	`, user.ID, p.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	a.removeRepo(name)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRestorePlugin un-deletes a soft-deleted plugin owned by the caller and
+// re-materializes its git repo. Fails if another active plugin already uses
+// the same name (covered by the partial unique index).
+func (a *App) handleRestorePlugin(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	name := chi.URLParam(r, "name")
+	p, err := a.loadPluginByNameAny(r.Context(), name)
+	if err == sql.ErrNoRows {
+		writeErr(w, http.StatusNotFound, "plugin not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if p.OwnerID != user.ID {
+		writeErr(w, http.StatusForbidden, "not your plugin")
+		return
+	}
+	if p.DeletedAt == nil {
+		writeErr(w, http.StatusBadRequest, "plugin is not deleted")
+		return
+	}
+	if _, err := a.db.ExecContext(r.Context(), `
+		UPDATE plugins SET deleted_at = NULL, deleted_by = NULL, updated_at = now()
+		WHERE id = $1
+	`, p.ID); err != nil {
+		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+			writeErr(w, http.StatusConflict, "an active plugin with that name already exists")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+
+	restored, err := a.loadPluginByName(r.Context(), name)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if err := a.materializePlugin(r.Context(), restored); err != nil {
+		writeErr(w, http.StatusInternalServerError, "git materialize: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, restored)
 }
 
 type skillReq struct {

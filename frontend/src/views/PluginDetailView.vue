@@ -87,7 +87,7 @@ async function deletePlugin() {
   if (!plugin.value) return
   const ok = await confirm({
     title: 'Delete plugin',
-    message: `Delete plugin "${plugin.value.name}" and all its skills? This cannot be undone.`,
+    message: `Delete plugin "${plugin.value.name}"? It will be hidden from the marketplace and \`git clone\` will stop serving it. You can restore it later from the Plugins page.`,
     confirmLabel: 'Delete plugin',
     danger: true,
   })

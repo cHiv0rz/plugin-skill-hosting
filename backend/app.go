@@ -22,19 +22,22 @@ type User struct {
 }
 
 type Plugin struct {
-	ID          string    `json:"id"`
-	OwnerID     string    `json:"ownerId"`
-	OwnerName   string    `json:"ownerName,omitempty"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Version     string    `json:"version"`
-	AuthorName  string    `json:"authorName"`
-	AuthorEmail string    `json:"authorEmail"`
-	Homepage    string    `json:"homepage"`
-	License     string    `json:"license"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	Skills      []Skill   `json:"skills,omitempty"`
+	ID            string     `json:"id"`
+	OwnerID       string     `json:"ownerId"`
+	OwnerName     string     `json:"ownerName,omitempty"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	Version       string     `json:"version"`
+	AuthorName    string     `json:"authorName"`
+	AuthorEmail   string     `json:"authorEmail"`
+	Homepage      string     `json:"homepage"`
+	License       string     `json:"license"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
+	DeletedAt     *time.Time `json:"deletedAt,omitempty"`
+	DeletedBy     *string    `json:"deletedBy,omitempty"`
+	DeletedByName *string    `json:"deletedByName,omitempty"`
+	Skills        []Skill    `json:"skills,omitempty"`
 }
 
 type Skill struct {

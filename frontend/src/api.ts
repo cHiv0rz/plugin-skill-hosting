@@ -18,6 +18,9 @@ export interface Plugin {
   license: string
   createdAt: string
   updatedAt: string
+  deletedAt?: string
+  deletedBy?: string
+  deletedByName?: string
   skills?: Skill[]
 }
 
@@ -102,6 +105,9 @@ export const api = {
     request<Plugin>('/api/plugins', { method: 'POST', body: JSON.stringify(data) }),
   deletePlugin: (name: string) =>
     request<void>(`/api/plugins/${name}`, { method: 'DELETE' }),
+  listDeletedPlugins: () => request<Plugin[]>('/api/me/deleted-plugins'),
+  restorePlugin: (name: string) =>
+    request<Plugin>(`/api/plugins/${name}/restore`, { method: 'POST' }),
   createSkill: (pluginName: string, data: Partial<Skill>) =>
     request<Skill>(`/api/plugins/${pluginName}/skills`, {
       method: 'POST',

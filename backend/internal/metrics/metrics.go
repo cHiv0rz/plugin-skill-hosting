@@ -3,7 +3,9 @@
 package metrics
 
 import (
+	"bufio"
 	"database/sql"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -197,6 +199,24 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 		s.wroteHeader = true
 	}
 	return s.ResponseWriter.Write(b)
+}
+
+// Flush forwards to the underlying writer when it implements http.Flusher.
+// gitkit's git-upload-pack handler type-asserts the response writer to
+// { Flush(); Write([]byte) (int, error) } and panics if Flush is missing.
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack forwards to the underlying writer when it implements http.Hijacker,
+// for handlers that need to take over the connection (e.g. websockets).
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := s.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
 }
 
 // HTTPMiddleware records request count, duration, and in-flight gauge. It

@@ -71,6 +71,48 @@ Set on the backend container:
 
 Register `${PUBLIC_BASE_URL}/api/auth/oidc/callback` as an allowed redirect URI in your IdP. After a successful exchange the backend redirects the browser to `${PUBLIC_BASE_URL}/auth/callback#token=…&user=…` (the SPA reads the hash and stores the session).
 
+## MCP server
+
+`/mcp` is a Streamable HTTP MCP endpoint authenticated by the same per-user API token. The home page renders a copy-paste setup card with the token pre-filled. The server announces itself as `plugin-skill-hosting`; the MCP server name your client uses is up to you (the home page suggests `MARKETPLACE_NAME`).
+
+One-line install for Claude Code:
+
+```
+claude mcp add --transport http <server-name> https://your-host/mcp \
+  -H "Authorization: Bearer <api-token>"
+```
+
+JSON config snippet for Claude Desktop and other MCP clients (paste under `mcpServers`):
+
+```json
+{
+  "mcpServers": {
+    "<server-name>": {
+      "type": "http",
+      "url": "https://your-host/mcp",
+      "headers": { "Authorization": "Bearer <api-token>" }
+    }
+  }
+}
+```
+
+Tools exposed:
+
+| Tool | Mode | Purpose |
+| --- | --- | --- |
+| `list_plugins` | read | List all active plugins |
+| `get_plugin` | read | Plugin metadata + skill list |
+| `get_skill` | read | A skill's description, SKILL.md body, and file list |
+| `list_skill_files` | read | Paths + sizes of supporting files |
+| `get_skill_file` | read | One file's content; binary returned as base64 |
+| `create_skill` | write | Add a new skill to a plugin |
+| `update_skill` | write | Replace a skill's description and body |
+| `upsert_skill_file` | write | Create or overwrite a supporting file under `scripts/`, `references/`, or `assets/` |
+
+Plugins themselves are read-only over MCP (no `create_plugin` / `delete_plugin`), and **nothing can be deleted via MCP** — destructive operations stay behind the web UI. Every write tool runs the same code path as the corresponding REST handler: it bumps the plugin version, snapshots a new skill version row, and re-materialises the bare git repo, so changes are visible to `git clone` and `marketplace.json` immediately.
+
+Behind a reverse proxy, the `/mcp` location needs response buffering off and long read/send timeouts because the MCP transport keeps a long-lived SSE GET stream open. Both `frontend/nginx.conf` (for Compose) and the helm chart's ingress annotations (`nginx.ingress.kubernetes.io/proxy-buffering`, `proxy-read-timeout`, `proxy-send-timeout`) already set those.
+
 ## Run locally with Docker Compose
 
 ```bash
@@ -103,7 +145,7 @@ A chart lives at `helm/plugin-skill-hosting/`. It ships:
 - Frontend `Deployment` + `Service` (nginx serving the SPA)
 - A bundled Postgres 16 `Deployment` + `Service` + PVC (toggle off via `postgres.enabled=false` to use an external DB)
 - Two PVCs: one for `/data` (bare git repos + worktrees), one for Postgres
-- An `Ingress` (nginx + cert-manager) routing `/api`, `/git`, `/marketplace.json`, `/healthz` → backend, and `/` → frontend
+- An `Ingress` (nginx + cert-manager) routing `/api`, `/git`, `/mcp`, `/marketplace.json`, `/healthz` → backend, and `/` → frontend
 - A `SealedSecret` template for `JWT_SECRET` and `POSTGRES_PASSWORD` (or `DATABASE_URL` when `postgres.enabled=false`)
 
 ### Prerequisites
@@ -159,7 +201,7 @@ Override the registry with `--registries my-registry.com` or `DEFAULT_REGISTRIES
 
 - The backend container runs as UID 10001; `podSecurityContext.fsGroup: 10001` makes the `/data` PVC group-writable. If you change the image's user, update both.
 - Ingress path order matters — backend prefixes (`/api`, `/git`, `/mcp`, `/marketplace.json`, `/healthz`) must precede the `/` catch-all that goes to the frontend. The bundled values get this right; preserve order if you edit them.
-- The git smart-HTTP endpoint needs `nginx.ingress.kubernetes.io/proxy-request-buffering: "off"` and a generous `proxy-body-size` — both already set in `values.yaml`.
+- The git smart-HTTP endpoint needs `nginx.ingress.kubernetes.io/proxy-request-buffering: "off"` and a generous `proxy-body-size`. The MCP endpoint additionally needs `proxy-buffering: "off"` and long `proxy-read-timeout` / `proxy-send-timeout` so its SSE stream isn't reaped after the default 60 s. All four are already set in `values.yaml`.
 - Both PVCs (`-data` for git, Postgres data) survive `helm uninstall`. Snapshot them before destroying the release.
 
 ## Run for development (no Docker)
@@ -185,24 +227,49 @@ npm run dev    # http://localhost:5173 with proxy to backend
 ## API surface
 
 Public:
-- `GET /api/auth/config` → `{ "mode": "password" | "oidc" }`
+- `GET /api/auth/config` → `{ mode: "password" | "oidc", marketplaceName, defaultLicense }`
 - `POST /api/auth/register` `{email, username, password}` → `{token, user}` *(only when `AUTH_MODE=password`)*
 - `POST /api/auth/login` `{email, password}` → `{token, user}` *(only when `AUTH_MODE=password`)*
 - `GET  /api/auth/oidc/login` → 302 to IdP *(only when `AUTH_MODE=oidc`)*
 - `GET  /api/auth/oidc/callback` → 302 to `${PUBLIC_BASE_URL}/auth/callback#token=…&user=…` *(only when `AUTH_MODE=oidc`)*
+- `GET  /healthz`
 
-Token-gated (Bearer JWT/API token, or HTTP Basic with token as password):
-- `GET /marketplace.json` — the marketplace document. URLs inside it embed the requesting user's token as Basic-Auth credentials so subsequent `git clone` works.
+Token-gated (Bearer JWT or API token; HTTP Basic with token as password is also accepted on the marketplace + git endpoints; Bearer-only on `/mcp`):
+
+*Marketplace + git*
+- `GET /marketplace.json` — the marketplace document. URLs inside embed the requesting user's token as Basic-Auth credentials so subsequent `git clone` works.
 - `GET /git/<plugin>.git/...` — git smart HTTP (clone-only). On unauthenticated requests responds with `WWW-Authenticate: Basic` so `git clone` prompts.
-- `GET /api/plugins` — list all plugins
-- `GET /api/plugins/:name` — plugin + its skills
+- `POST/GET/DELETE /mcp` — Streamable HTTP MCP server. See [§MCP server](#mcp-server) for tools and config.
+
+*User*
 - `GET /api/me` — returns the user incl. `apiToken`
-- `POST /api/me/token/regenerate` → `{ apiToken }` — invalidates the previous token
-- `POST /api/plugins`
-- `DELETE /api/plugins/:name`
+- `POST /api/me/token/regenerate` → `{ apiToken }` (invalidates the previous token)
+- `GET /api/me/deleted-plugins` — soft-deleted plugins owned by the caller (drives the restore UI)
+
+*Plugins*
+- `GET /api/plugins` — list all active plugins
+- `GET /api/plugins/:name` — plugin + its active skills
+- `POST /api/plugins` — version is assigned automatically (no `version` field needed)
+- `DELETE /api/plugins/:name` — soft-delete (owner only); the bare repo is wiped on disk
+- `POST /api/plugins/:name/restore` — un-soft-delete (owner only); re-materialises the repo
+
+*Skills*
 - `POST /api/plugins/:name/skills` `{name, description, body}`
 - `PUT  /api/plugins/:name/skills/:skill` `{description, body}`
-- `DELETE /api/plugins/:name/skills/:skill`
+- `DELETE /api/plugins/:name/skills/:skill` — soft-delete
+- `GET /api/plugins/:name/deleted-skills` — list soft-deleted skills for the restore UI
+- `POST /api/plugins/:name/skills/:skill/restore` — un-soft-delete
+- `GET /api/plugins/:name/skills/:skill/versions` — full edit history (newest first)
+- `POST /api/plugins/:name/skills/:skill/revert/:version` — restore description + body + file tree from a snapshot
+
+*Skill files (multi-file skills)*
+- `GET /api/plugins/:name/skills/:skill/files` — list paths/sizes (no content)
+- `GET /api/plugins/:name/skills/:skill/files/<path>` — fetch one file (binary as base64)
+- `PUT /api/plugins/:name/skills/:skill/files/<path>` `{content, isBinary?}` — create or update; max 10 MB per file, 100 MB / 50 files per skill, paths must live under `scripts/`, `references/`, or `assets/`
+- `DELETE /api/plugins/:name/skills/:skill/files/<path>`
+
+*Validator*
+- `POST /api/skills/validate` `{description, body, files?}` — runs the skill through the Anthropic API for static review. Requires `ANTHROPIC_API_KEY` on the backend; controlled by `ANTHROPIC_MODEL` (default `claude-sonnet-4-6`).
 
 ## Plugin layout produced
 
@@ -237,9 +304,9 @@ description: One-line summary Claude uses to decide when to apply this skill
 This is an MVP / proof-of-concept:
 
 - No email verification, password reset, or rate limiting
-- Single global marketplace gated by per-user tokens — every authenticated user sees every plugin (the token only controls *access*, not visibility)
+- Single global marketplace gated by per-user tokens — every authenticated user sees and can edit every plugin (the token only controls *access*, not visibility or write authorisation; only **delete** is owner-restricted)
 - No SKILL.md frontmatter beyond `name` and `description` (no `allowed-tools`, `arguments`, etc.)
-- No commands, agents, hooks, or MCP servers — only skills
+- A plugin may contain skills only — no commands, agents, hooks, or bundled MCP servers as plugin contents. (This service *exposes* its own MCP server at `/mcp` so clients can edit skills, but the plugins it hosts can still only ship skills.)
 - Force-push on every change (acceptable for a marketplace, not for a real git repo)
 
 Each of these is straightforward to add later — the data model and API leave room.

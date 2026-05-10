@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import NavBar from './components/NavBar.vue'
+import SiteFooter from './components/Footer.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import { useAuthStore } from './stores/auth'
 import { useRoute } from 'vue-router'
@@ -21,10 +22,24 @@ onMounted(() => {
     <RouterView />
   </template>
   <template v-else>
-    <NavBar />
-    <main>
-      <RouterView />
-    </main>
+    <div class="app-shell">
+      <NavBar />
+      <main>
+        <RouterView />
+      </main>
+      <SiteFooter />
+    </div>
   </template>
   <ConfirmDialog />
 </template>
+
+<style scoped>
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.app-shell main {
+  flex: 1;
+}
+</style>

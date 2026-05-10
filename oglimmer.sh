@@ -32,6 +32,7 @@ PUSH="${PUSH:-true}"
 HELP=false
 PLATFORM="${PLATFORM:-arm64}"
 RELEASE_MODE=false
+RELEASE_BUMP=""
 SHOW_VERSIONS=false
 DEV_COMMAND=""
 
@@ -97,7 +98,7 @@ Build, deploy, and release plugin-skill-hosting application components.
 
 COMMANDS:
     build               Build and deploy components (default)
-    release             Create a new release with version bumping and build
+    release             Bump semver, commit, tag, then build and deploy
     show                Show current frontend version
     start               Build and run backend locally in background
     stop                Stop the local backend process
@@ -113,6 +114,9 @@ BUILD OPTIONS:
     -n, --no-restart        Skip Kubernetes deployment restart
     --no-push               Skip pushing images to registry
     --dry-run               Show what would be done without executing
+
+RELEASE OPTIONS:
+    --bump major|minor|bugfix  Skip the interactive prompt and bump that semver part
 
     # Registry configuration options
     --registries "REG1,REG2"    Comma-separated list of registries to push to (default: ${DEFAULT_REGISTRIES[0]})
@@ -132,7 +136,8 @@ EXAMPLES:
     ${SCRIPT_NAME} build                                    # Build and deploy both components with defaults
     ${SCRIPT_NAME} build -f                                 # Build and deploy frontend only
     ${SCRIPT_NAME} build -b -v                              # Build and deploy backend with verbose output
-    ${SCRIPT_NAME} release                                  # Create a new release with version bump and build
+    ${SCRIPT_NAME} release                                  # Interactive semver bump, then build and deploy
+    ${SCRIPT_NAME} release --bump minor                     # Non-interactive minor bump, then build and deploy
     ${SCRIPT_NAME} show                                     # Show current version
     ${SCRIPT_NAME} build --registries my-registry.com       # Use custom registry
     ${SCRIPT_NAME} build --platform amd64                   # Build for AMD64 only
@@ -231,6 +236,10 @@ parse_args() {
                 PLATFORM="$2"
                 shift 2
                 ;;
+            --bump)
+                RELEASE_BUMP="$2"
+                shift 2
+                ;;
             -h|--help)
                 HELP=true
                 shift
@@ -274,6 +283,12 @@ parse_args() {
     # Validate platform parameter
     if [[ -n "$PLATFORM" && ! "$PLATFORM" =~ ^(amd64|arm64|multi|auto)$ ]]; then
         log_error "Invalid platform: $PLATFORM. Must be one of: amd64, arm64, multi, auto"
+        exit 1
+    fi
+
+    # Validate release bump parameter
+    if [[ -n "$RELEASE_BUMP" && ! "$RELEASE_BUMP" =~ ^(major|minor|bugfix|patch)$ ]]; then
+        log_error "Invalid --bump: $RELEASE_BUMP. Must be one of: major, minor, bugfix"
         exit 1
     fi
 
@@ -592,18 +607,21 @@ execute_build() {
 
     log_info "Starting build process..."
 
-    local app_version git_commit
+    local app_version git_commit build_time
     app_version=$(grep '"version"' "$FRONTEND_DIR/package.json" | head -1 | sed -E 's/.*"version": *"([^"]+)".*/\1/')
     git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    log_verbose "Build metadata: version=$app_version commit=$git_commit time=$build_time"
 
     # Build frontend
     if [[ "$BUILD_FRONTEND" == true ]]; then
-        build_image "frontend" "--build-arg VITE_APP_VERSION=${app_version} --build-arg VITE_GIT_COMMIT=${git_commit} frontend/" "${FRONTEND_IMAGES[@]}"
+        build_image "frontend" "--build-arg VITE_APP_VERSION=${app_version} --build-arg VITE_GIT_COMMIT=${git_commit} --build-arg VITE_BUILD_TIME=${build_time} frontend/" "${FRONTEND_IMAGES[@]}"
     fi
 
     # Build backend
     if [[ "$BUILD_BACKEND" == true ]]; then
-        build_image "backend" "--build-arg VERSION=${app_version} --build-arg GIT_COMMIT=${git_commit} backend/" "${BACKEND_IMAGES[@]}"
+        build_image "backend" "--build-arg VERSION=${app_version} --build-arg GIT_COMMIT=${git_commit} --build-arg BUILD_TIME=${build_time} backend/" "${BACKEND_IMAGES[@]}"
     fi
 
     # Restart deployments if requested
@@ -630,19 +648,25 @@ execute_release() {
     # Show current versions
     echo "Current versions:"; show_versions; echo
 
-    # Explain bump types
-    echo "Select which part to bump (semantic versioning):"
-    echo "  1) major  - incompatible API changes"
-    echo "  2) minor  - backwards-compatible new features"
-    echo "  3) bugfix - backwards-compatible bug fixes"
-    PS3="Enter choice (1-3): "
-    select bump in major minor bugfix; do
-        if [[ -n "$bump" ]]; then
-            echo "Chosen bump type: $bump"; break
-        else
-            echo "Invalid choice. Please select 1, 2, or 3.";
-        fi
-    done
+    local bump
+    if [[ -n "$RELEASE_BUMP" ]]; then
+        bump="$RELEASE_BUMP"
+        log_info "Bump type from --bump: $bump"
+    else
+        # Explain bump types
+        echo "Select which part to bump (semantic versioning):"
+        echo "  1) major  - incompatible API changes"
+        echo "  2) minor  - backwards-compatible new features"
+        echo "  3) bugfix - backwards-compatible bug fixes"
+        PS3="Enter choice (1-3): "
+        select bump in major minor bugfix; do
+            if [[ -n "$bump" ]]; then
+                echo "Chosen bump type: $bump"; break
+            else
+                echo "Invalid choice. Please select 1, 2, or 3.";
+            fi
+        done
+    fi
 
     # Compute new version from frontend package.json
     local current_version

@@ -95,7 +95,15 @@ export interface AuthConfig {
   defaultLicense: string
 }
 
+export interface BackendBuildInfo {
+  name: string
+  version: string
+  gitCommit: string
+  buildTime: string
+}
+
 export const api = {
+  version: () => request<BackendBuildInfo>('/api/version'),
   authConfig: () => request<AuthConfig>('/api/auth/config'),
   register: (email: string, username: string, password: string) =>
     request<{ token: string; user: User }>('/api/auth/register', {

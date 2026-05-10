@@ -133,6 +133,7 @@ func main() {
 	})
 
 	r.Route("/api", func(r chi.Router) {
+		r.Get("/version", app.handleVersion)
 		r.Get("/auth/config", app.handleAuthConfig)
 
 		switch cfg.AuthMode {

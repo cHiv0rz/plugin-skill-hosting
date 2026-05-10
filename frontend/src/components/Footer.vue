@@ -28,7 +28,14 @@ const backendLine = computed(() => {
              target="_blank" rel="noopener">MIT License</a>
         </p>
         <nav class="footer-links">
-          <RouterLink to="/developers">Developers</RouterLink>
+          <RouterLink to="/developers">
+            Developer Portal
+            <svg class="link-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M6 3h7v7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M13 3 6.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M11 9v3.5A1.5 1.5 0 0 1 9.5 14h-6A1.5 1.5 0 0 1 2 12.5v-6A1.5 1.5 0 0 1 3.5 5H7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </RouterLink>
         </nav>
       </div>
       <dl class="footer-versions" aria-label="Build information">
@@ -90,6 +97,9 @@ const backendLine = computed(() => {
   gap: 18px;
 }
 .footer-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -97,6 +107,11 @@ const backendLine = computed(() => {
   border-bottom: 1px solid transparent;
   padding-bottom: 2px;
   transition: color 0.2s ease, border-color 0.2s ease;
+}
+.footer-links .link-icon {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
 }
 .footer-links a:hover {
   color: var(--text);

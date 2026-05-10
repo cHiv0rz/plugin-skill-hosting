@@ -1,14 +1,16 @@
 # Plugin Marketplace Hosting
 
-A self-hosted, **token-gated** Claude Code plugin marketplace. Developers sign up, create plugins, write skills via the web UI, and Claude Code installs them with the per-user URL shown after sign-in:
+A self-hosted, **token-gated** Claude Code plugin marketplace built for **organizations to share and collaborate on plugins and skills**. Instead of every engineer collecting their own private skills, your team publishes them to a shared marketplace that any Claude Code user in the org can install with one command:
 
 ```
 /plugin marketplace add https://_:<api-token>@your-host/marketplace.json
 ```
 
-The same per-user token also unlocks a built-in **MCP server** at `/mcp` so Claude (or any MCP-aware client) can read plugins and create / modify skills directly — useful for evolving a skill from inside an editing session instead of bouncing back to the web UI.
+Anyone in the organization can sign in, create a plugin, author skills via the web UI (or via MCP from inside Claude), and the moment they hit save the new version is available to every other user's Claude Code — no review queue, no packaging step, no redeploy. The model is deliberately collaborative: plugins are visible to everyone, skill edit history is preserved, and soft-deletes mean nothing is ever truly lost.
 
-Every endpoint that exposes plugin data — `marketplace.json`, the git smart-HTTP repos, `/mcp`, and the read APIs — requires a valid token. The token is generated per user and shown on the front page. Anyone holding the token can clone repos, drive the MCP server, and read the marketplace as that user.
+The same per-user token also unlocks a built-in **MCP server** at `/mcp` so Claude (or any MCP-aware client) can read plugins and create / modify skills directly — useful for evolving a shared skill from inside an editing session instead of bouncing back to the web UI.
+
+Every endpoint that exposes plugin data — `marketplace.json`, the git smart-HTTP repos, `/mcp`, and the read APIs — requires a valid token. The token is generated per user and shown on the front page. Anyone holding the token can clone repos, drive the MCP server, and read the marketplace as that user, so distribute it like any other org credential.
 
 ## How it works
 
@@ -279,8 +281,7 @@ description: One-line summary Claude uses to decide when to apply this skill
 
 ## What this is *not*
 
-- A SaaS product with clear tenant separation
-- This is a sharing platform for one organziation
+- A SaaS product with clear tenant separation — it is a single-tenant sharing platform for one organization, with no isolation between users
 - User/Password has no email verification, password reset as it's only for dev testing
 - No SKILL.md frontmatter beyond `name` and `description` (no `allowed-tools`, `arguments`, etc.)
 - A plugin may contain skills only — no commands, agents, hooks, or bundled MCP servers as plugin contents. (This service *exposes* its own MCP server at `/mcp` so clients can edit skills, but the plugins it hosts can still only ship skills.)

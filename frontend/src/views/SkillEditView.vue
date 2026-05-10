@@ -258,6 +258,27 @@ onMounted(load)
 
   <!-- Edit mode: tabs -->
   <div v-else>
+    <input
+      ref="scriptsInput"
+      type="file"
+      multiple
+      style="display: none"
+      @change="onUploadChange('scripts', $event)"
+    />
+    <input
+      ref="referencesInput"
+      type="file"
+      multiple
+      style="display: none"
+      @change="onUploadChange('references', $event)"
+    />
+    <input
+      ref="assetsInput"
+      type="file"
+      multiple
+      style="display: none"
+      @change="onUploadChange('assets', $event)"
+    />
     <nav class="tabs">
       <button
         type="button"
@@ -321,6 +342,7 @@ onMounted(load)
         <p class="muted" style="margin-top: 0">
           Optional supporting files Claude can use alongside SKILL.md. Most skills don't need any.
         </p>
+        <ErrorAlert v-if="!selectedPath && fileError" :message="fileError" />
         <div v-for="folder in FOLDER_ORDER" :key="folder" class="tree-folder"
              @dragover.prevent
              @drop="onDrop(folder, $event)">
@@ -339,30 +361,6 @@ onMounted(load)
               title="Upload files"
               @click="triggerUpload(folder)"
             >↑ upload</button>
-            <input
-              v-if="folder === 'scripts'"
-              ref="scriptsInput"
-              type="file"
-              multiple
-              style="display: none"
-              @change="onUploadChange(folder, $event)"
-            />
-            <input
-              v-else-if="folder === 'references'"
-              ref="referencesInput"
-              type="file"
-              multiple
-              style="display: none"
-              @change="onUploadChange(folder, $event)"
-            />
-            <input
-              v-else
-              ref="assetsInput"
-              type="file"
-              multiple
-              style="display: none"
-              @change="onUploadChange(folder, $event)"
-            />
           </header>
           <p class="tree-folder-hint muted">{{ FOLDER_HINT[folder] }}</p>
           <ul class="tree-list">

@@ -15,6 +15,18 @@ export const FOLDER_HINT: Record<SkillFolder, string> = {
 
 export const FILENAME_RE = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/
 
+// sanitizeUploadedFilename maps a user-chosen filename (e.g. from a file
+// dialog) onto the restricted character set the backend accepts for skill file
+// paths. Spaces and other punctuation become "_" so common drops like
+// "Screenshot 2026-03-14 at 9.45.34 PM.png" upload cleanly. Returns the empty
+// string if nothing usable is left (caller should reject).
+export function sanitizeUploadedFilename(name: string): string {
+  const stripped = name.replace(/^.*[\\/]/, '')
+  const replaced = stripped.replace(/[^A-Za-z0-9_.-]+/g, '_')
+  if (/^\.+$/.test(replaced)) return ''
+  return replaced
+}
+
 export function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
@@ -230,8 +242,8 @@ export function useSkillFileManager(
     fileError.value = ''
     let lastPath: string | null = null
     for (const file of Array.from(list)) {
-      const safe = file.name.replace(/^.*[\\/]/, '')
-      if (!FILENAME_RE.test(safe)) {
+      const safe = sanitizeUploadedFilename(file.name)
+      if (!safe || !FILENAME_RE.test(safe)) {
         fileError.value = `skipped invalid filename: ${file.name}`
         continue
       }

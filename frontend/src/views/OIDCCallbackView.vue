@@ -2,7 +2,9 @@
 import { onMounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
-import type { User } from '../api'
+import { errMsg } from '../api'
+import type { User } from '../types'
+import ErrorAlert from '../components/ErrorAlert.vue'
 
 const error = ref('')
 const auth = useAuthStore()
@@ -20,9 +22,9 @@ onMounted(() => {
     : window.location.hash
   const params = new URLSearchParams(hash)
 
-  const errMsg = params.get('error')
-  if (errMsg) {
-    error.value = errMsg
+  const errParam = params.get('error')
+  if (errParam) {
+    error.value = errParam
     return
   }
   const token = params.get('token')
@@ -33,8 +35,8 @@ onMounted(() => {
   }
   try {
     auth.setSession(token, decodeUser(userParam))
-  } catch (e: any) {
-    error.value = 'failed to parse session: ' + (e?.message ?? e)
+  } catch (e: unknown) {
+    error.value = 'failed to parse session: ' + errMsg(e)
     return
   }
   // Wipe the hash from the URL before navigating away.
@@ -47,7 +49,7 @@ onMounted(() => {
   <div class="card" style="max-width: 420px">
     <template v-if="error">
       <h1>Sign-in failed</h1>
-      <div class="error">{{ error }}</div>
+      <ErrorAlert :message="error" />
       <p style="margin-top: 16px">
         <RouterLink to="/login">Try again</RouterLink>
       </p>

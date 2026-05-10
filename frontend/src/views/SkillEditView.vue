@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  api,
-  type SkillVersion,
-  type ValidationReport,
-  type FindingSeverity,
-  type SkillFileSummary,
-} from '../api'
+import { api, errMsg } from '../api'
+import type { ValidationReport, FindingSeverity } from '../types'
 import { useConfirm } from '../composables/useConfirm'
+import {
+  useSkillFileManager,
+  fmtBytes,
+  FOLDER_ORDER,
+  FOLDER_HINT,
+} from '../composables/useSkillFileManager'
+import SkillVersionHistory from '../components/SkillVersionHistory.vue'
+import ErrorAlert from '../components/ErrorAlert.vue'
+import { usePluginStore } from '../stores/plugins'
+
+const pluginStore = usePluginStore()
 
 const { confirm } = useConfirm()
 
@@ -24,8 +30,7 @@ const description = ref('')
 const body = ref(defaultBody())
 const error = ref('')
 const loading = ref(false)
-const versions = ref<SkillVersion[]>([])
-const versionsError = ref('')
+const versionHistory = ref<InstanceType<typeof SkillVersionHistory> | null>(null)
 const validating = ref(false)
 const validationReport = ref<ValidationReport | null>(null)
 const validationError = ref('')
@@ -36,34 +41,34 @@ const validationError = ref('')
 type Tab = 'skill' | 'more'
 const tab = ref<Tab>('skill')
 
-// File tree state ────────────────────────────────────────────
-type SkillFolder = 'scripts' | 'references' | 'assets'
-const FOLDER_ORDER: SkillFolder[] = ['scripts', 'references', 'assets']
-const FOLDER_HINT: Record<SkillFolder, string> = {
-  scripts: 'Code Claude can run (Python, bash, …)',
-  references: 'Reference docs Claude reads on demand',
-  assets: 'Templates, fonts, icons used in output',
-}
-const files = ref<SkillFileSummary[]>([])
-// null selection inside the MORE tab = no file picked yet (empty-state).
-const selectedPath = ref<string | null>(null)
-const fileContent = ref('')
-const fileIsBinary = ref(false)
-const fileSize = ref(0)
-const fileLoading = ref(false)
-const fileDirty = ref(false)
-const fileError = ref('')
-
-const filesByFolder = computed(() => {
-  const out: Record<SkillFolder, SkillFileSummary[]> = {
-    scripts: [], references: [], assets: [],
-  }
-  for (const f of files.value) {
-    const root = f.path.split('/', 1)[0] as SkillFolder
-    if (out[root]) out[root].push(f)
-  }
-  return out
-})
+const {
+  files,
+  selectedPath,
+  fileContent,
+  fileIsBinary,
+  fileSize,
+  fileLoading,
+  fileDirty,
+  fileError,
+  filesByFolder,
+  scriptsInput,
+  referencesInput,
+  assetsInput,
+  loadFiles,
+  selectFile,
+  saveCurrentFile,
+  deleteCurrentFile,
+  downloadCurrentFile,
+  promptNewFile,
+  triggerUpload,
+  onUploadChange,
+  onDrop,
+  refreshAfterRevert,
+} = useSkillFileManager(
+  () => props.pluginName,
+  () => props.skillName,
+  { onChanged: () => versionHistory.value?.reload() },
+)
 
 const SEVERITY_ORDER: Record<FindingSeverity, number> = {
   problem: 0,
@@ -113,16 +118,10 @@ function fmt(d?: string | null) {
   return new Date(d).toLocaleString()
 }
 
-function fmtBytes(n: number) {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / (1024 * 1024)).toFixed(2)} MB`
-}
-
 async function load() {
   if (!isEdit.value) return
   try {
-    const p = await api.getPlugin(props.pluginName)
+    const p = await pluginStore.loadPlugin(props.pluginName)
     const s = p.skills?.find(s => s.name === props.skillName)
     if (!s) {
       error.value = 'skill not found'
@@ -137,216 +136,10 @@ async function load() {
       updatedByName: s.updatedByName,
       updatedAt: s.updatedAt,
     }
-    await Promise.all([loadVersions(), loadFiles()])
-  } catch (e: any) {
-    error.value = e.message
+    await loadFiles()
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   }
-}
-
-async function loadVersions() {
-  if (!props.skillName) return
-  versionsError.value = ''
-  try {
-    versions.value = await api.skillVersions(props.pluginName, props.skillName)
-  } catch (e: any) {
-    versionsError.value = e.message
-  }
-}
-
-async function loadFiles() {
-  if (!props.skillName) return
-  try {
-    files.value = await api.listSkillFiles(props.pluginName, props.skillName)
-  } catch (e: any) {
-    error.value = e.message
-  }
-}
-
-function clearFileSelection() {
-  selectedPath.value = null
-  fileError.value = ''
-  fileDirty.value = false
-}
-
-async function selectFile(path: string) {
-  if (selectedPath.value === path) return
-  selectedPath.value = path
-  fileError.value = ''
-  fileDirty.value = false
-  fileLoading.value = true
-  try {
-    const f = await api.getSkillFile(props.pluginName, props.skillName!, path)
-    fileContent.value = f.content
-    fileIsBinary.value = f.isBinary
-    fileSize.value = f.sizeBytes
-  } catch (e: any) {
-    fileError.value = e.message
-  } finally {
-    fileLoading.value = false
-  }
-}
-
-async function saveCurrentFile() {
-  if (!selectedPath.value || !props.skillName) return
-  fileError.value = ''
-  try {
-    const saved = await api.putSkillFile(
-      props.pluginName,
-      props.skillName,
-      selectedPath.value,
-      { content: fileContent.value, isBinary: fileIsBinary.value },
-    )
-    fileSize.value = saved.sizeBytes
-    fileDirty.value = false
-    await Promise.all([loadFiles(), loadVersions()])
-  } catch (e: any) {
-    fileError.value = e.message
-  }
-}
-
-async function deleteCurrentFile() {
-  if (!selectedPath.value || !props.skillName) return
-  const ok = await confirm({
-    title: 'Delete file',
-    message: `Delete ${selectedPath.value}? This creates a new version, which you can revert if needed.`,
-    confirmLabel: 'Delete',
-    danger: true,
-  })
-  if (!ok) return
-  try {
-    await api.deleteSkillFile(props.pluginName, props.skillName, selectedPath.value)
-    clearFileSelection()
-    await Promise.all([loadFiles(), loadVersions()])
-  } catch (e: any) {
-    fileError.value = e.message
-  }
-}
-
-function downloadCurrentFile() {
-  if (!selectedPath.value) return
-  let blob: Blob
-  if (fileIsBinary.value) {
-    const bin = atob(fileContent.value)
-    const bytes = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-    blob = new Blob([bytes], { type: 'application/octet-stream' })
-  } else {
-    blob = new Blob([fileContent.value], { type: 'text/plain;charset=utf-8' })
-  }
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = selectedPath.value.split('/').pop() || 'file'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-}
-
-const FILENAME_RE = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/
-
-async function promptNewFile(folder: SkillFolder) {
-  const raw = window.prompt(
-    `New file under ${folder}/\nEnter relative path (e.g. build.py or sub/util.sh):`,
-  )
-  if (!raw) return
-  const trimmed = raw.trim().replace(/^\/+/, '')
-  if (!FILENAME_RE.test(trimmed)) {
-    fileError.value = `invalid filename: ${trimmed}`
-    return
-  }
-  const path = `${folder}/${trimmed}`
-  if (files.value.some(f => f.path === path)) {
-    await selectFile(path)
-    return
-  }
-  try {
-    await api.putSkillFile(props.pluginName, props.skillName!, path, {
-      content: '',
-      isBinary: false,
-    })
-    await Promise.all([loadFiles(), loadVersions()])
-    await selectFile(path)
-  } catch (e: any) {
-    fileError.value = e.message
-  }
-}
-
-function fileInputRefs(): Record<SkillFolder, HTMLInputElement | null> {
-  return {
-    scripts: scriptsInput.value,
-    references: referencesInput.value,
-    assets: assetsInput.value,
-  }
-}
-const scriptsInput = ref<HTMLInputElement | null>(null)
-const referencesInput = ref<HTMLInputElement | null>(null)
-const assetsInput = ref<HTMLInputElement | null>(null)
-
-function triggerUpload(folder: SkillFolder) {
-  fileInputRefs()[folder]?.click()
-}
-
-async function onUploadChange(folder: SkillFolder, ev: Event) {
-  const input = ev.target as HTMLInputElement
-  if (!input.files || !props.skillName) return
-  await uploadList(folder, input.files)
-  input.value = ''
-}
-
-function isProbablyUtf8(bytes: Uint8Array): boolean {
-  try {
-    new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function base64FromBytes(bytes: Uint8Array): string {
-  // Chunk to avoid call stack limits on large files.
-  let binary = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  }
-  return btoa(binary)
-}
-
-async function uploadList(folder: SkillFolder, list: FileList) {
-  fileError.value = ''
-  let lastPath: string | null = null
-  for (const file of Array.from(list)) {
-    const safe = file.name.replace(/^.*[\\/]/, '')
-    if (!FILENAME_RE.test(safe)) {
-      fileError.value = `skipped invalid filename: ${file.name}`
-      continue
-    }
-    const path = `${folder}/${safe}`
-    try {
-      const buf = await file.arrayBuffer()
-      const bytes = new Uint8Array(buf)
-      const binary = !isProbablyUtf8(bytes)
-      const content = binary
-        ? base64FromBytes(bytes)
-        : new TextDecoder().decode(bytes)
-      await api.putSkillFile(props.pluginName, props.skillName!, path, {
-        content,
-        isBinary: binary,
-      })
-      lastPath = path
-    } catch (e: any) {
-      fileError.value = `${file.name}: ${e.message}`
-    }
-  }
-  await Promise.all([loadFiles(), loadVersions()])
-  if (lastPath) await selectFile(lastPath)
-}
-
-async function onDrop(folder: SkillFolder, ev: DragEvent) {
-  ev.preventDefault()
-  if (!props.skillName || !ev.dataTransfer?.files) return
-  await uploadList(folder, ev.dataTransfer.files)
 }
 
 async function submit() {
@@ -358,7 +151,11 @@ async function submit() {
         description: description.value,
         body: body.value,
       })
-      await Promise.all([loadVersions(), loadFiles()])
+      await Promise.all([
+        versionHistory.value?.reload(),
+        loadFiles(),
+        pluginStore.refreshCurrent(),
+      ])
     } else {
       await api.createSkill(props.pluginName, {
         name: name.value,
@@ -367,8 +164,8 @@ async function submit() {
       })
       router.push(`/plugins/${props.pluginName}`)
     }
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   } finally {
     loading.value = false
   }
@@ -385,8 +182,8 @@ async function validate() {
       body: body.value,
       files: files.value,
     })
-  } catch (e: any) {
-    validationError.value = e.message
+  } catch (e: unknown) {
+    validationError.value = errMsg(e)
   } finally {
     validating.value = false
   }
@@ -410,18 +207,9 @@ async function revert(version: number) {
       updatedByName: s.updatedByName,
       updatedAt: s.updatedAt,
     }
-    await Promise.all([loadVersions(), loadFiles()])
-    // Reload the currently-open file if it still exists, otherwise drop the
-    // selection so we never display stale or missing-file content.
-    if (selectedPath.value) {
-      if (files.value.some(f => f.path === selectedPath.value)) {
-        await selectFile(selectedPath.value)
-      } else {
-        clearFileSelection()
-      }
-    }
-  } catch (e: any) {
-    error.value = e.message
+    await Promise.all([versionHistory.value?.reload(), refreshAfterRevert()])
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   }
 }
 
@@ -447,7 +235,7 @@ onMounted(load)
       <label>Body (Markdown — becomes the contents of SKILL.md after the frontmatter)</label>
       <textarea v-model="body" />
 
-      <div v-if="error" class="error">{{ error }}</div>
+      <ErrorAlert :message="error" />
       <div class="row" style="margin-top: 16px; gap: 8px; flex-wrap: wrap">
         <button type="submit" :disabled="loading">
           {{ loading ? 'Saving…' : 'Create skill' }}
@@ -509,7 +297,7 @@ onMounted(load)
         <label>Body (Markdown — becomes the contents of SKILL.md after the frontmatter)</label>
         <textarea v-model="body" />
 
-        <div v-if="error" class="error">{{ error }}</div>
+        <ErrorAlert :message="error" />
         <div class="row" style="margin-top: 16px; gap: 8px; flex-wrap: wrap">
           <button type="submit" :disabled="loading">
             {{ loading ? 'Saving…' : 'Save' }}
@@ -626,7 +414,7 @@ onMounted(load)
           </div>
 
           <p v-if="fileLoading" class="muted">Loading…</p>
-          <p v-else-if="fileError" class="error">{{ fileError }}</p>
+          <ErrorAlert v-else-if="fileError" :message="fileError" />
 
           <template v-else>
             <textarea
@@ -658,7 +446,7 @@ onMounted(load)
   <div v-if="validating || validationError || validationReport" class="card review">
     <h2 style="margin-top: 0">Claude review</h2>
     <p v-if="validating" class="muted">Asking Claude to review the skill…</p>
-    <p v-if="validationError" class="error">{{ validationError }}</p>
+    <ErrorAlert :message="validationError" />
 
     <template v-if="validationReport">
       <p v-if="validationReport.summary" class="review-summary">
@@ -683,7 +471,7 @@ onMounted(load)
       <ul v-if="sortedFindings.length" class="findings">
         <li
           v-for="(f, i) in sortedFindings"
-          :key="i"
+          :key="`${f.severity}:${f.title}:${i}`"
           class="finding"
           :class="`finding--${f.severity}`"
         >
@@ -725,40 +513,13 @@ onMounted(load)
     </table>
   </div>
 
-  <div v-if="isEdit" class="card">
-    <h2 style="margin-top: 0">Edit history</h2>
-    <p v-if="versionsError" class="error">{{ versionsError }}</p>
-    <p v-else-if="versions.length === 0" class="muted">No history yet.</p>
-    <table v-else>
-      <thead>
-        <tr>
-          <th>Version</th>
-          <th>Action</th>
-          <th>By</th>
-          <th>When</th>
-          <th>Description</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="v in versions" :key="v.id">
-          <td>{{ v.version }}</td>
-          <td><span class="badge">{{ v.action }}</span></td>
-          <td>{{ v.editedByName || '—' }}</td>
-          <td class="muted" style="white-space: nowrap">{{ fmt(v.editedAt) }}</td>
-          <td>{{ v.description }}</td>
-          <td style="text-align: right">
-            <button
-              v-if="v.action !== 'delete'"
-              class="secondary"
-              type="button"
-              @click="revert(v.version)"
-            >Revert</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+  <SkillVersionHistory
+    v-if="isEdit"
+    ref="versionHistory"
+    :plugin-name="pluginName"
+    :skill-name="skillName"
+    @revert="revert"
+  />
 </template>
 
 <style scoped>

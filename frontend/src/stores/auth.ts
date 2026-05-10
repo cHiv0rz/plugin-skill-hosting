@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, type AuthMode, type User } from '../api'
+import { api } from '../api'
+import type { AuthMode, User } from '../types'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(loadUser())
@@ -17,10 +18,10 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function setSession(t: string, u: User) {
-    token.value = t
-    user.value = u
     localStorage.setItem('token', t)
     localStorage.setItem('user', JSON.stringify(u))
+    token.value = t
+    user.value = u
   }
 
   async function ensureMode(): Promise<AuthMode> {
@@ -57,16 +58,16 @@ export const useAuthStore = defineStore('auth', () => {
   async function refreshUser() {
     if (!token.value) return
     const u = await api.me()
-    user.value = u
     localStorage.setItem('user', JSON.stringify(u))
+    user.value = u
   }
 
   async function regenerateToken() {
     const r = await api.regenerateToken()
     if (user.value) {
       const u = { ...user.value, apiToken: r.apiToken }
-      user.value = u
       localStorage.setItem('user', JSON.stringify(u))
+      user.value = u
     }
     return r.apiToken
   }

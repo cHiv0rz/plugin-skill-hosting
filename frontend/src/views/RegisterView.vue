@@ -2,6 +2,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
+import { errMsg } from '../api'
+import ErrorAlert from '../components/ErrorAlert.vue'
 
 const email = ref('')
 const username = ref('')
@@ -21,8 +23,8 @@ async function submit() {
   try {
     await auth.register(email.value, username.value, password.value)
     router.push('/')
-  } catch (e: any) {
-    error.value = e.message || 'registration failed'
+  } catch (e: unknown) {
+    error.value = errMsg(e, 'registration failed')
   } finally {
     loading.value = false
   }
@@ -40,7 +42,7 @@ async function submit() {
         <input v-model="username" required autocomplete="username" pattern="[a-zA-Z0-9_-]{3,32}" />
         <label>Password (min 8 chars)</label>
         <input v-model="password" type="password" required minlength="8" autocomplete="new-password" />
-        <div v-if="error" class="error">{{ error }}</div>
+        <ErrorAlert :message="error" />
         <div style="margin-top: 16px">
           <button type="submit" :disabled="loading">
             {{ loading ? 'Creating…' : 'Sign up' }}

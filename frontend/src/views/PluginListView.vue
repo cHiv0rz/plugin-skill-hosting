@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { api, type Plugin } from '../api'
+import { errMsg } from '../api'
+import ErrorAlert from '../components/ErrorAlert.vue'
 import { useAuthStore } from '../stores/auth'
+import { usePluginStore } from '../stores/plugins'
 import { RouterLink } from 'vue-router'
 import { useConfirm } from '../composables/useConfirm'
+import { storeToRefs } from 'pinia'
 
 const { confirm } = useConfirm()
 
 const auth = useAuthStore()
-const plugins = ref<Plugin[]>([])
-const deletedPlugins = ref<Plugin[]>([])
+const pluginStore = usePluginStore()
+const { list: plugins, deleted: deletedPlugins } = storeToRefs(pluginStore)
 const loading = ref(true)
 const error = ref('')
 const tokenError = ref('')
@@ -56,18 +59,16 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [active, deleted] = await Promise.all([
-      api.listPlugins(),
-      auth.user ? api.listDeletedPlugins() : Promise.resolve([] as Plugin[]),
+    await Promise.all([
+      pluginStore.loadList(),
+      auth.user ? pluginStore.loadDeleted() : Promise.resolve(),
     ])
-    plugins.value = active
-    deletedPlugins.value = deleted
-    if (initialLoad && active.length === 0) {
+    if (initialLoad && plugins.value.length === 0) {
       activeTab.value = 'connect'
     }
     initialLoad = false
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   } finally {
     loading.value = false
   }
@@ -75,10 +76,9 @@ async function load() {
 
 async function restorePlugin(name: string) {
   try {
-    await api.restorePlugin(name)
-    await load()
-  } catch (e: any) {
-    error.value = e.message
+    await pluginStore.restorePlugin(name)
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   }
 }
 
@@ -94,8 +94,8 @@ async function regenerate() {
   regenerating.value = true
   try {
     await auth.regenerateToken()
-  } catch (e: any) {
-    tokenError.value = e.message
+  } catch (e: unknown) {
+    tokenError.value = errMsg(e)
   } finally {
     regenerating.value = false
   }
@@ -143,7 +143,7 @@ onMounted(load)
 
   <section v-show="activeTab === 'plugins'" role="tabpanel">
     <div v-if="loading" class="muted">Loading…</div>
-    <div v-else-if="error" class="error">{{ error }}</div>
+    <ErrorAlert v-else-if="error" :message="error" />
     <div v-else-if="plugins.length === 0" class="card">
       <p class="muted" style="margin: 0 0 12px">No plugins yet.</p>
       <div class="row" style="gap: 12px; flex-wrap: wrap">
@@ -240,7 +240,7 @@ onMounted(load)
             {{ regenerating ? 'Regenerating…' : 'Regenerate' }}
           </button>
         </div>
-        <div v-if="tokenError" class="error" style="margin-top: 8px">{{ tokenError }}</div>
+        <ErrorAlert :message="tokenError" style="margin-top: 8px" />
       </details>
     </div>
 

@@ -15,10 +15,10 @@ func TestSanitizeUsername(t *testing.T) {
 		{"alice", "alice"},
 		{"Alice_99", "Alice_99"},
 		{"  spaced  ", "spaced"},
-		{"weird name!", "weird_name"},                                                // space → _, ! → _, trailing _ trimmed
-		{"---bad---", "bad"},                                                         // trim leading/trailing - and _
-		{"___", ""},                                                                  // all-junk after trim
-		{"ab", ""},                                                                   // too short after sanitisation
+		{"weird name!", "weird_name"}, // space → _, ! → _, trailing _ trimmed
+		{"---bad---", "bad"},          // trim leading/trailing - and _
+		{"___", ""},                   // all-junk after trim
+		{"ab", ""},                    // too short after sanitisation
 		{"abcdefghijklmnopqrstuvwxyz0123456789", "abcdefghijklmnopqrstuvwxyz012345"}, // 32 cap
 		{"a/b\\c", "a_b_c"},
 		{"über", "ber"}, // ü → _, trim leading underscore → "ber"

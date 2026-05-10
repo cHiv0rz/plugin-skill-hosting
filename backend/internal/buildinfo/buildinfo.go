@@ -2,9 +2,10 @@
 package buildinfo
 
 // Populated at build time via:
-//   -ldflags "-X marketplace/internal/buildinfo.Version=...
-//             -X marketplace/internal/buildinfo.Commit=...
-//             -X marketplace/internal/buildinfo.Time=..."
+//
+//	-ldflags "-X marketplace/internal/buildinfo.Version=...
+//	          -X marketplace/internal/buildinfo.Commit=...
+//	          -X marketplace/internal/buildinfo.Time=..."
 var (
 	Version = "dev"
 	Commit  = "unknown"

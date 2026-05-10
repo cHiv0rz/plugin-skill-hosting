@@ -1,34 +1,58 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 
-import PluginListView from './views/PluginListView.vue'
-import PluginDetailView from './views/PluginDetailView.vue'
-import NewPluginView from './views/NewPluginView.vue'
-import SkillEditView from './views/SkillEditView.vue'
-import LoginView from './views/LoginView.vue'
-import RegisterView from './views/RegisterView.vue'
-import OIDCCallbackView from './views/OIDCCallbackView.vue'
-import DevelopersView from './views/DevelopersView.vue'
+declare module 'vue-router' {
+  interface RouteMeta {
+    requiresAuth?: boolean
+    hideChrome?: boolean
+  }
+}
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', component: PluginListView, meta: { requiresAuth: true } },
-    { path: '/login', component: LoginView, meta: { hideChrome: true } },
-    { path: '/register', component: RegisterView },
-    { path: '/auth/callback', component: OIDCCallbackView },
-    { path: '/developers', component: DevelopersView },
-    { path: '/plugins/new', component: NewPluginView, meta: { requiresAuth: true } },
-    { path: '/plugins/:name', component: PluginDetailView, props: true, meta: { requiresAuth: true } },
+    {
+      path: '/',
+      component: () => import('./views/PluginListView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/login',
+      component: () => import('./views/LoginView.vue'),
+      meta: { hideChrome: true },
+    },
+    {
+      path: '/register',
+      component: () => import('./views/RegisterView.vue'),
+    },
+    {
+      path: '/auth/callback',
+      component: () => import('./views/OIDCCallbackView.vue'),
+    },
+    {
+      path: '/developers',
+      component: () => import('./views/DevelopersView.vue'),
+    },
+    {
+      path: '/plugins/new',
+      component: () => import('./views/NewPluginView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/plugins/:name',
+      component: () => import('./views/PluginDetailView.vue'),
+      props: true,
+      meta: { requiresAuth: true },
+    },
     {
       path: '/plugins/:name/skills/new',
-      component: SkillEditView,
+      component: () => import('./views/SkillEditView.vue'),
       props: route => ({ pluginName: route.params.name, skillName: null }),
       meta: { requiresAuth: true },
     },
     {
       path: '/plugins/:name/skills/:skillName/edit',
-      component: SkillEditView,
+      component: () => import('./views/SkillEditView.vue'),
       props: route => ({
         pluginName: route.params.name,
         skillName: route.params.skillName,

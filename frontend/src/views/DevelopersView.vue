@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, defineComponent, h, type PropType, type SlotsType } from 'vue'
+import { computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
+import Endpoint from '../components/dev/Endpoint.vue'
+import ParamRow from '../components/dev/ParamRow.vue'
 
 const auth = useAuthStore()
 
@@ -28,83 +30,6 @@ const sections = [
   { id: 'mcp', title: 'MCP server' },
   { id: 'errors', title: 'Errors' },
 ]
-
-const ParamRow = defineComponent({
-  name: 'ParamRow',
-  props: {
-    name: { type: String, required: true },
-    type: { type: String, required: true },
-    required: { type: Boolean, default: false },
-  },
-  setup(props, { slots }) {
-    return () =>
-      h('div', { class: 'param-row' }, [
-        h('div', { class: 'param-head' }, [
-          h('code', { class: 'param-name' }, props.name),
-          h('span', { class: 'param-type' }, props.type),
-          props.required ? h('span', { class: 'param-required' }, 'required') : null,
-        ]),
-        h('div', { class: 'param-desc' }, slots.default?.()),
-      ])
-  },
-})
-
-const Endpoint = defineComponent({
-  name: 'Endpoint',
-  props: {
-    method: { type: String as PropType<'GET' | 'POST' | 'PUT' | 'DELETE'>, required: true },
-    path: { type: String, required: true },
-    summary: { type: String, required: true },
-    auth: { type: Boolean, default: true },
-  },
-  slots: Object as SlotsType<{
-    request?: () => any
-    response?: () => any
-    params?: () => any
-    notes?: () => any
-    errors?: () => any
-    example?: () => any
-  }>,
-  setup(props, { slots }) {
-    const slug = (s: string) =>
-      s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-    return () => {
-      const id = `ep-${props.method.toLowerCase()}-${slug(props.path)}`
-      return h('div', { class: 'endpoint', id }, [
-        h('div', { class: 'endpoint-head' }, [
-          h(
-            'span',
-            { class: ['endpoint-method', `method-${props.method.toLowerCase()}`] },
-            props.method,
-          ),
-          h('code', { class: 'endpoint-path' }, props.path),
-          props.auth
-            ? h('span', { class: 'endpoint-auth' }, 'auth required')
-            : h('span', { class: 'endpoint-auth endpoint-auth--public' }, 'public'),
-        ]),
-        h('p', { class: 'endpoint-summary' }, props.summary),
-        slots.params
-          ? h('div', { class: 'endpoint-block' }, [h('h4', 'Path parameters'), slots.params()])
-          : null,
-        slots.request
-          ? h('div', { class: 'endpoint-block' }, [h('h4', 'Request body'), slots.request()])
-          : null,
-        slots.response
-          ? h('div', { class: 'endpoint-block' }, [h('h4', 'Response'), slots.response()])
-          : null,
-        slots.errors
-          ? h('div', { class: 'endpoint-block' }, [h('h4', 'Errors'), slots.errors()])
-          : null,
-        slots.example
-          ? h('div', { class: 'endpoint-block' }, [h('h4', 'Example'), slots.example()])
-          : null,
-        slots.notes
-          ? h('div', { class: 'endpoint-block endpoint-notes' }, [slots.notes()])
-          : null,
-      ])
-    }
-  },
-})
 </script>
 
 <template>

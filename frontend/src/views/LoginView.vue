@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter, useRoute } from 'vue-router'
+import { errMsg } from '../api'
 
 const email = ref('')
 const password = ref('')
@@ -19,10 +20,10 @@ async function submit() {
   loading.value = true
   try {
     await auth.login(email.value, password.value)
-    const dest = (route.query.redirect as string) || '/'
+    const dest = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     router.push(dest)
-  } catch (e: any) {
-    error.value = e.message || 'login failed'
+  } catch (e: unknown) {
+    error.value = errMsg(e, 'login failed')
   } finally {
     loading.value = false
   }

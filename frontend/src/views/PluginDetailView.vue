@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { api, type Plugin, type Skill } from '../api'
+import { storeToRefs } from 'pinia'
+import { api, errMsg } from '../api'
+import type { Skill } from '../types'
+import ErrorAlert from '../components/ErrorAlert.vue'
 import { useAuthStore } from '../stores/auth'
+import { usePluginStore } from '../stores/plugins'
 import { useConfirm } from '../composables/useConfirm'
 
 const { confirm } = useConfirm()
@@ -10,7 +14,8 @@ const { confirm } = useConfirm()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const plugin = ref<Plugin | null>(null)
+const pluginStore = usePluginStore()
+const { current: plugin } = storeToRefs(pluginStore)
 const deletedSkills = ref<Skill[]>([])
 const loading = ref(true)
 const error = ref('')
@@ -47,10 +52,10 @@ async function load() {
   error.value = ''
   try {
     const name = route.params.name as string
-    plugin.value = await api.getPlugin(name)
+    await pluginStore.loadPlugin(name)
     deletedSkills.value = await api.listDeletedSkills(name)
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   } finally {
     loading.value = false
   }
@@ -68,8 +73,8 @@ async function deleteSkill(name: string) {
   try {
     await api.deleteSkill(plugin.value.name, name)
     await load()
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   }
 }
 
@@ -78,8 +83,8 @@ async function restoreSkill(name: string) {
   try {
     await api.restoreSkill(plugin.value.name, name)
     await load()
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   }
 }
 
@@ -93,10 +98,10 @@ async function deletePlugin() {
   })
   if (!ok) return
   try {
-    await api.deletePlugin(plugin.value.name)
+    await pluginStore.deletePlugin(plugin.value.name)
     router.push('/')
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   }
 }
 
@@ -108,7 +113,7 @@ onMounted(() => {
 
 <template>
   <div v-if="loading" class="muted">Loading…</div>
-  <div v-else-if="error" class="error">{{ error }}</div>
+  <ErrorAlert v-else-if="error" :message="error" />
   <div v-else-if="plugin">
     <div class="row" style="margin-bottom: 16px">
       <h1 style="margin: 0">{{ plugin.name }}</h1>

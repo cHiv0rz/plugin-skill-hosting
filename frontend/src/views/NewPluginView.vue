@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { api } from '../api'
+import { errMsg } from '../api'
+import ErrorAlert from '../components/ErrorAlert.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { usePluginStore } from '../stores/plugins'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const pluginStore = usePluginStore()
 const name = ref('')
 const description = ref('')
 const authorName = ref(authStore.user?.username ?? '')
@@ -20,7 +23,7 @@ async function submit() {
   error.value = ''
   loading.value = true
   try {
-    const p = await api.createPlugin({
+    const p = await pluginStore.createPlugin({
       name: name.value,
       description: description.value,
       authorName: authorName.value,
@@ -29,8 +32,8 @@ async function submit() {
       license: license.value,
     })
     router.push(`/plugins/${p.name}`)
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e: unknown) {
+    error.value = errMsg(e)
   } finally {
     loading.value = false
   }
@@ -64,7 +67,7 @@ async function submit() {
       <label>Homepage</label>
       <input v-model="homepage" type="url" />
 
-      <div v-if="error" class="error">{{ error }}</div>
+      <ErrorAlert :message="error" />
       <div style="margin-top: 16px">
         <button type="submit" :disabled="loading">
           {{ loading ? 'Creating…' : 'Create plugin' }}

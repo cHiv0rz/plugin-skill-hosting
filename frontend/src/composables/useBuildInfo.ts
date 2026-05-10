@@ -1,5 +1,6 @@
 import { ref } from 'vue'
-import { api, type BackendBuildInfo } from '../api'
+import { api } from '../api'
+import type { BackendBuildInfo } from '../types'
 import { frontendBuildInfo } from '../build-info'
 
 const backend = ref<BackendBuildInfo | null>(null)

@@ -270,15 +270,81 @@ type dbExec interface {
 	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
 }
 
-func (a *App) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	p, err := a.loadPluginByName(r.Context(), name)
+// loadActivePluginOrRespond fetches the plugin named by the URL :name param.
+// If the plugin is missing or the DB fails it writes the matching HTTP error
+// and returns nil; the caller bails out on a nil result.
+func (a *App) loadActivePluginOrRespond(w http.ResponseWriter, r *http.Request) *Plugin {
+	p, err := a.loadPluginByName(r.Context(), chi.URLParam(r, "name"))
 	if err == sql.ErrNoRows {
 		writeErr(w, http.StatusNotFound, "plugin not found")
-		return
+		return nil
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
+		return nil
+	}
+	return p
+}
+
+// loadActiveSkillOrRespond fetches the skill named by the URL :skill param
+// inside the given plugin, with the same respond-and-return-nil contract.
+func (a *App) loadActiveSkillOrRespond(w http.ResponseWriter, r *http.Request, pluginID string) *Skill {
+	s, err := a.loadActiveSkill(r.Context(), pluginID, chi.URLParam(r, "skill"))
+	if err == sql.ErrNoRows {
+		writeErr(w, http.StatusNotFound, "skill not found")
+		return nil
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return nil
+	}
+	return s
+}
+
+// bumpAndPersistPluginVersion bumps p.Version in-memory and writes the new
+// value (plus updated_at) to the row. The in-memory bump is what
+// materializePlugin reads when it regenerates the git repo.
+func (a *App) bumpAndPersistPluginVersion(ctx context.Context, p *Plugin, kind bumpKind) error {
+	p.Version = bumpVersion(p.Version, kind)
+	_, err := a.db.ExecContext(ctx,
+		`UPDATE plugins SET version = $1, updated_at = now() WHERE id = $2`, p.Version, p.ID)
+	return err
+}
+
+// touchPluginUpdatedAt advances the plugin's updated_at without changing the
+// version. Used when a skill change happens that the version-bump rules
+// exempt (e.g. the very first skill added to a plugin) but the listing-sort
+// timestamp should still reflect the activity.
+func (a *App) touchPluginUpdatedAt(ctx context.Context, pluginID string) error {
+	_, err := a.db.ExecContext(ctx,
+		`UPDATE plugins SET updated_at = now() WHERE id = $1`, pluginID)
+	return err
+}
+
+// isUniqueViolation sniffs a libpq error message for a unique-constraint
+// failure; the typed error class isn't exported, so a string match is the
+// path of least resistance.
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique")
+}
+
+// respondDBOrConflict maps a write error to either 409 (unique violation,
+// using the supplied conflict message) or a generic 500.
+func respondDBOrConflict(w http.ResponseWriter, err error, conflictMsg string) {
+	if isUniqueViolation(err) {
+		writeErr(w, http.StatusConflict, conflictMsg)
+		return
+	}
+	writeErr(w, http.StatusInternalServerError, "db error")
+}
+
+func (a *App) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
+	p := a.loadActivePluginOrRespond(w, r)
+	if p == nil {
 		return
 	}
 	skills, err := a.loadSkillsForPlugin(r.Context(), p.ID)
@@ -288,6 +354,21 @@ func (a *App) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Skills = skills
 	writeJSON(w, http.StatusOK, p)
+}
+
+// initialPluginVersion returns the auto-managed starting version for a newly
+// created plugin. The first plugin a user creates stays at 0.1.0; every
+// subsequent plugin starts with the major bumped to 1.0.0.
+func (a *App) initialPluginVersion(ctx context.Context, ownerID string) (string, error) {
+	var existing int
+	if err := a.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM plugins WHERE owner_id = $1`, ownerID).Scan(&existing); err != nil {
+		return "", err
+	}
+	if existing == 0 {
+		return "0.1.0", nil
+	}
+	return "1.0.0", nil
 }
 
 func (a *App) handleCreatePlugin(w http.ResponseWriter, r *http.Request) {
@@ -303,31 +384,19 @@ func (a *App) handleCreatePlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Version is auto-managed: first plugin per owner stays at 0.1.0; every
-	// subsequent plugin starts with the major bumped to 1.0.0. Any version the
-	// client sends is ignored.
-	var ownerPluginCount int
-	if err := a.db.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM plugins WHERE owner_id = $1`, user.ID).Scan(&ownerPluginCount); err != nil {
+	version, err := a.initialPluginVersion(r.Context(), user.ID)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	version := "0.1.0"
-	if ownerPluginCount > 0 {
-		version = "1.0.0"
-	}
 
 	var id string
-	err := a.db.QueryRowContext(r.Context(), `
+	err = a.db.QueryRowContext(r.Context(), `
 		INSERT INTO plugins (owner_id, name, description, version, author_name, author_email, homepage, license)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
 	`, user.ID, req.Name, req.Description, version, req.AuthorName, req.AuthorEmail, req.Homepage, req.License).Scan(&id)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-			writeErr(w, http.StatusConflict, "plugin name already taken")
-			return
-		}
-		writeErr(w, http.StatusInternalServerError, "db error")
+		respondDBOrConflict(w, err, "plugin name already taken")
 		return
 	}
 
@@ -346,14 +415,8 @@ func (a *App) handleCreatePlugin(w http.ResponseWriter, r *http.Request) {
 // (the bare repo is wiped on disk and re-materialized on restore).
 func (a *App) handleDeletePlugin(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
-	name := chi.URLParam(r, "name")
-	p, err := a.loadPluginByName(r.Context(), name)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "plugin not found")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+	p := a.loadActivePluginOrRespond(w, r)
+	if p == nil {
 		return
 	}
 	if p.OwnerID != user.ID {
@@ -367,7 +430,7 @@ func (a *App) handleDeletePlugin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	a.removeRepo(name)
+	a.removeRepo(p.Name)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -398,11 +461,7 @@ func (a *App) handleRestorePlugin(w http.ResponseWriter, r *http.Request) {
 		UPDATE plugins SET deleted_at = NULL, deleted_by = NULL, updated_at = now()
 		WHERE id = $1
 	`, p.ID); err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-			writeErr(w, http.StatusConflict, "an active plugin with that name already exists")
-			return
-		}
-		writeErr(w, http.StatusInternalServerError, "db error")
+		respondDBOrConflict(w, err, "an active plugin with that name already exists")
 		return
 	}
 
@@ -424,16 +483,20 @@ type skillReq struct {
 	Body        string `json:"body"`
 }
 
+// pluginSkillCount returns the number of skills (including soft-deleted) ever
+// stored for a plugin. Used to decide whether the next skill add is the
+// "first" one (no version bump) or a subsequent one.
+func (a *App) pluginSkillCount(ctx context.Context, pluginID string) (int, error) {
+	var n int
+	err := a.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM skills WHERE plugin_id = $1`, pluginID).Scan(&n)
+	return n, err
+}
+
 func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
-	pluginName := chi.URLParam(r, "name")
-	p, err := a.loadPluginByName(r.Context(), pluginName)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "plugin not found")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+	p := a.loadActivePluginOrRespond(w, r)
+	if p == nil {
 		return
 	}
 
@@ -452,11 +515,8 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Count skills (including soft-deleted) before insert so the very first
-	// skill ever added to this plugin doesn't bump the version.
-	var existingSkillCount int
-	if err := a.db.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM skills WHERE plugin_id = $1`, p.ID).Scan(&existingSkillCount); err != nil {
+	priorSkillCount, err := a.pluginSkillCount(r.Context(), p.ID)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -467,24 +527,26 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3, $4, $5, $5) RETURNING id
 	`, p.ID, req.Name, req.Description, req.Body, user.ID).Scan(&id)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-			writeErr(w, http.StatusConflict, "skill with that name already exists")
-			return
-		}
-		writeErr(w, http.StatusInternalServerError, "db error")
+		respondDBOrConflict(w, err, "skill with that name already exists")
 		return
 	}
 	if err := a.recordSkillVersion(r.Context(), a.db, id, "create", req.Name, req.Description, req.Body, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	if existingSkillCount > 0 {
-		p.Version = bumpVersion(p.Version, bumpMinor)
-	}
-	if _, err := a.db.ExecContext(r.Context(),
-		`UPDATE plugins SET version = $1, updated_at = now() WHERE id = $2`, p.Version, p.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
-		return
+	// First skill in the plugin: no version bump (the plugin's initial
+	// version is its debut version), but still advance updated_at so listings
+	// re-sort. Subsequent additions bump minor.
+	if priorSkillCount == 0 {
+		if err := a.touchPluginUpdatedAt(r.Context(), p.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db error")
+			return
+		}
+	} else {
+		if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpMinor); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db error")
+			return
+		}
 	}
 
 	if err := a.materializePlugin(r.Context(), p); err != nil {
@@ -501,15 +563,8 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
-	pluginName := chi.URLParam(r, "name")
-	skillName := chi.URLParam(r, "skill")
-	p, err := a.loadPluginByName(r.Context(), pluginName)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "plugin not found")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+	p := a.loadActivePluginOrRespond(w, r)
+	if p == nil {
 		return
 	}
 
@@ -519,13 +574,8 @@ func (a *App) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := a.loadActiveSkill(r.Context(), p.ID, skillName)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "skill not found")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+	existing := a.loadActiveSkillOrRespond(w, r, p.ID)
+	if existing == nil {
 		return
 	}
 
@@ -540,9 +590,7 @@ func (a *App) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	p.Version = bumpVersion(p.Version, bumpPatch)
-	if _, err := a.db.ExecContext(r.Context(),
-		`UPDATE plugins SET version = $1, updated_at = now() WHERE id = $2`, p.Version, p.ID); err != nil {
+	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpPatch); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -556,25 +604,12 @@ func (a *App) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
-	pluginName := chi.URLParam(r, "name")
-	skillName := chi.URLParam(r, "skill")
-	p, err := a.loadPluginByName(r.Context(), pluginName)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "plugin not found")
+	p := a.loadActivePluginOrRespond(w, r)
+	if p == nil {
 		return
 	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
-		return
-	}
-
-	existing, err := a.loadActiveSkill(r.Context(), p.ID, skillName)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "skill not found")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+	existing := a.loadActiveSkillOrRespond(w, r, p.ID)
+	if existing == nil {
 		return
 	}
 
@@ -589,9 +624,7 @@ func (a *App) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	p.Version = bumpVersion(p.Version, bumpMinor)
-	if _, err := a.db.ExecContext(r.Context(),
-		`UPDATE plugins SET version = $1, updated_at = now() WHERE id = $2`, p.Version, p.ID); err != nil {
+	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpMinor); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -605,14 +638,8 @@ func (a *App) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 // handleListDeletedSkills returns soft-deleted skills for a plugin so the UI
 // can offer "restore".
 func (a *App) handleListDeletedSkills(w http.ResponseWriter, r *http.Request) {
-	pluginName := chi.URLParam(r, "name")
-	p, err := a.loadPluginByName(r.Context(), pluginName)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "plugin not found")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+	p := a.loadActivePluginOrRespond(w, r)
+	if p == nil {
 		return
 	}
 	skills, err := a.loadDeletedSkillsForPlugin(r.Context(), p.ID)
@@ -625,28 +652,27 @@ func (a *App) handleListDeletedSkills(w http.ResponseWriter, r *http.Request) {
 
 // handleRestoreSkill un-deletes a soft-deleted skill. Fails if another active
 // skill in the same plugin already uses the same name.
-func (a *App) handleRestoreSkill(w http.ResponseWriter, r *http.Request) {
-	user := currentUser(r)
-	pluginName := chi.URLParam(r, "name")
-	skillName := chi.URLParam(r, "skill")
-	p, err := a.loadPluginByName(r.Context(), pluginName)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "plugin not found")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
-		return
-	}
-
-	// Pick the most recently deleted skill with this name (in case the same
-	// name was deleted multiple times across history).
-	var skillID, desc, body string
-	err = a.db.QueryRowContext(r.Context(), `
+// findLatestDeletedSkill returns the id/description/body of the most recently
+// soft-deleted skill with this name in the plugin. The "most recent" filter
+// matters because the same name can be deleted multiple times across history.
+func (a *App) findLatestDeletedSkill(ctx context.Context, pluginID, name string) (skillID, desc, body string, err error) {
+	err = a.db.QueryRowContext(ctx, `
 		SELECT id, description, body FROM skills
 		WHERE plugin_id = $1 AND name = $2 AND deleted_at IS NOT NULL
 		ORDER BY deleted_at DESC LIMIT 1
-	`, p.ID, skillName).Scan(&skillID, &desc, &body)
+	`, pluginID, name).Scan(&skillID, &desc, &body)
+	return
+}
+
+func (a *App) handleRestoreSkill(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	p := a.loadActivePluginOrRespond(w, r)
+	if p == nil {
+		return
+	}
+	skillName := chi.URLParam(r, "skill")
+
+	skillID, desc, body, err := a.findLatestDeletedSkill(r.Context(), p.ID, skillName)
 	if err == sql.ErrNoRows {
 		writeErr(w, http.StatusNotFound, "no deleted skill with that name")
 		return
@@ -660,20 +686,14 @@ func (a *App) handleRestoreSkill(w http.ResponseWriter, r *http.Request) {
 		UPDATE skills SET deleted_at = NULL, deleted_by = NULL, updated_at = now(), updated_by = $1
 		WHERE id = $2
 	`, user.ID, skillID); err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-			writeErr(w, http.StatusConflict, "an active skill with that name already exists")
-			return
-		}
-		writeErr(w, http.StatusInternalServerError, "db error")
+		respondDBOrConflict(w, err, "an active skill with that name already exists")
 		return
 	}
 	if err := a.recordSkillVersion(r.Context(), a.db, skillID, "restore", skillName, desc, body, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	p.Version = bumpVersion(p.Version, bumpMinor)
-	if _, err := a.db.ExecContext(r.Context(),
-		`UPDATE plugins SET version = $1, updated_at = now() WHERE id = $2`, p.Version, p.ID); err != nil {
+	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpMinor); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -691,24 +711,25 @@ func (a *App) handleRestoreSkill(w http.ResponseWriter, r *http.Request) {
 
 // handleListSkillVersions returns the full edit history for a skill (active or
 // soft-deleted), newest first.
-func (a *App) handleListSkillVersions(w http.ResponseWriter, r *http.Request) {
-	pluginName := chi.URLParam(r, "name")
-	skillName := chi.URLParam(r, "skill")
-	p, err := a.loadPluginByName(r.Context(), pluginName)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "plugin not found")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
-		return
-	}
-
-	var skillID string
-	err = a.db.QueryRowContext(r.Context(), `
+// findSkillIDByName resolves a skill's id from (plugin, name), preferring an
+// active row over a soft-deleted one and the most-recently-updated row when
+// multiple match. Used by the version-history and revert endpoints, which
+// need to address a skill regardless of its current deletion state.
+func (a *App) findSkillIDByName(ctx context.Context, pluginID, name string) (string, error) {
+	var id string
+	err := a.db.QueryRowContext(ctx, `
 		SELECT id FROM skills WHERE plugin_id = $1 AND name = $2
 		ORDER BY (deleted_at IS NULL) DESC, updated_at DESC LIMIT 1
-	`, p.ID, skillName).Scan(&skillID)
+	`, pluginID, name).Scan(&id)
+	return id, err
+}
+
+func (a *App) handleListSkillVersions(w http.ResponseWriter, r *http.Request) {
+	p := a.loadActivePluginOrRespond(w, r)
+	if p == nil {
+		return
+	}
+	skillID, err := a.findSkillIDByName(r.Context(), p.ID, chi.URLParam(r, "skill"))
 	if err == sql.ErrNoRows {
 		writeErr(w, http.StatusNotFound, "skill not found")
 		return
@@ -757,26 +778,26 @@ func (a *App) handleListSkillVersions(w http.ResponseWriter, r *http.Request) {
 // snapshot stored in skill_versions. Acts as both un-delete (if currently soft-
 // deleted) and content-rollback in one operation, and writes a new version row
 // of action=revert.
+// loadSkillVersionSnapshot fetches the description+body stored in a specific
+// skill_versions row, used to roll a skill back to a prior state.
+func (a *App) loadSkillVersionSnapshot(ctx context.Context, skillID, version string) (desc, body string, err error) {
+	err = a.db.QueryRowContext(ctx, `
+		SELECT description, body FROM skill_versions
+		WHERE skill_id = $1 AND version = $2
+	`, skillID, version).Scan(&desc, &body)
+	return
+}
+
 func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
-	pluginName := chi.URLParam(r, "name")
+	p := a.loadActivePluginOrRespond(w, r)
+	if p == nil {
+		return
+	}
 	skillName := chi.URLParam(r, "skill")
 	versionStr := chi.URLParam(r, "version")
-	p, err := a.loadPluginByName(r.Context(), pluginName)
-	if err == sql.ErrNoRows {
-		writeErr(w, http.StatusNotFound, "plugin not found")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
-		return
-	}
 
-	var skillID string
-	err = a.db.QueryRowContext(r.Context(), `
-		SELECT id FROM skills WHERE plugin_id = $1 AND name = $2
-		ORDER BY (deleted_at IS NULL) DESC, updated_at DESC LIMIT 1
-	`, p.ID, skillName).Scan(&skillID)
+	skillID, err := a.findSkillIDByName(r.Context(), p.ID, skillName)
 	if err == sql.ErrNoRows {
 		writeErr(w, http.StatusNotFound, "skill not found")
 		return
@@ -786,14 +807,7 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		targetDesc, targetBody string
-		targetVersion          int
-	)
-	err = a.db.QueryRowContext(r.Context(), `
-		SELECT version, description, body FROM skill_versions
-		WHERE skill_id = $1 AND version = $2
-	`, skillID, versionStr).Scan(&targetVersion, &targetDesc, &targetBody)
+	targetDesc, targetBody, err := a.loadSkillVersionSnapshot(r.Context(), skillID, versionStr)
 	if err == sql.ErrNoRows {
 		writeErr(w, http.StatusNotFound, "version not found")
 		return
@@ -808,20 +822,14 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 		                  deleted_at = NULL, deleted_by = NULL
 		WHERE id = $4
 	`, targetDesc, targetBody, user.ID, skillID); err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-			writeErr(w, http.StatusConflict, "an active skill with that name already exists")
-			return
-		}
-		writeErr(w, http.StatusInternalServerError, "db error")
+		respondDBOrConflict(w, err, "an active skill with that name already exists")
 		return
 	}
 	if err := a.recordSkillVersion(r.Context(), a.db, skillID, "revert", skillName, targetDesc, targetBody, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	p.Version = bumpVersion(p.Version, bumpPatch)
-	if _, err := a.db.ExecContext(r.Context(),
-		`UPDATE plugins SET version = $1, updated_at = now() WHERE id = $2`, p.Version, p.ID); err != nil {
+	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpPatch); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}

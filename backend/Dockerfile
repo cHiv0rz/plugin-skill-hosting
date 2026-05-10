@@ -9,10 +9,10 @@ ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
 RUN go mod tidy && CGO_ENABLED=0 go build \
     -ldflags "-s -w \
-              -X main.BuildVersion=${VERSION} \
-              -X main.BuildCommit=${GIT_COMMIT} \
-              -X main.BuildTime=${BUILD_TIME}" \
-    -o /out/server .
+              -X marketplace/internal/buildinfo.Version=${VERSION} \
+              -X marketplace/internal/buildinfo.Commit=${GIT_COMMIT} \
+              -X marketplace/internal/buildinfo.Time=${BUILD_TIME}" \
+    -o /out/server ./cmd/marketplace
 
 FROM alpine:3.20
 RUN apk add --no-cache git ca-certificates && \

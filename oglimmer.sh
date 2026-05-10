@@ -374,7 +374,7 @@ cmd_dev_start() {
         return 1
     fi
     echo "building..."
-    (cd "$BACKEND_DIR" && go build -o "/tmp/${DEV_APP_NAME}" .)
+    (cd "$BACKEND_DIR" && go build -o "/tmp/${DEV_APP_NAME}" ./cmd/marketplace)
     echo "starting..."
     nohup "/tmp/${DEV_APP_NAME}" > "$DEV_LOG_FILE" 2>&1 &
     echo $! > "$DEV_PID_FILE"

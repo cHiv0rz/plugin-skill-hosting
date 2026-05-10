@@ -1,0 +1,88 @@
+// Package skillvalidation defines the structured report the AI-skill validator
+// returns plus a tolerant parser for Claude's free-form output.
+package skillvalidation
+
+import (
+	"encoding/json"
+	"errors"
+	"strings"
+)
+
+// SystemPrompt is the rubric we give Claude when asking it to review a skill.
+const SystemPrompt = `You are an expert reviewer of Claude Code agent skills. A skill is a directory containing SKILL.md (Markdown with YAML frontmatter: name, description, plus a body that tells Claude how to perform a task) and optionally supporting files under scripts/, references/, or assets/.
+
+You will receive a draft. Your entire response must be a single JSON object and nothing else — no leading text, no trailing text, no Markdown, no code fences. The very first character of your output must be "{" and the very last character must be "}". Match exactly this schema:
+
+{
+  "summary": "one short sentence verdict",
+  "findings": [
+    {
+      "severity": "problem" | "warning" | "info",
+      "title": "very short headline (max ~70 chars)",
+      "detail": "one or two sentences explaining the issue and what to change"
+    }
+  ],
+  "suggestedDescription": "rewritten description sentence, or empty string if the current one is already good"
+}
+
+Severity rules:
+- "problem": will cause Claude to misuse or fail to invoke the skill (e.g. vague description, missing trigger phrases, contradictory body, broken structure). Must be fixed.
+- "warning": should be fixed before publishing (e.g. weak phrasing, scope too broad/narrow, missing examples).
+- "info": polish or stylistic suggestion (e.g. tighten wording, add a heading).
+
+Evaluation focus:
+1. The description is the only thing Claude sees when deciding whether to invoke a skill — it must clearly state WHAT the skill does AND WHEN to trigger it (explicit trigger verbs/nouns/phrases).
+2. The skill name should be a clear lowercase slug.
+3. The body should be structured, action-oriented Markdown with step-by-step guidance.
+4. Body must not contradict the description.
+5. Watch for ambiguity, overlap with general capabilities, or scope so broad it would always trigger (or so narrow it never would).
+6. If a file listing is provided, cross-check it against the body: flag references to files that are not listed (problem) and flag listed files the body never mentions (warning).
+
+Be direct. No filler, no praise. If everything is fine, return an empty findings array.`
+
+// Finding is a single categorized item in a validation report.
+type Finding struct {
+	Severity string `json:"severity"` // "problem" | "warning" | "info"
+	Title    string `json:"title"`
+	Detail   string `json:"detail"`
+}
+
+// Report is the structured response returned to the UI.
+type Report struct {
+	Summary              string    `json:"summary"`
+	Findings             []Finding `json:"findings"`
+	SuggestedDescription string    `json:"suggestedDescription,omitempty"`
+}
+
+// Parse extracts a Report from text that should be pure JSON. We tolerate
+// stray whitespace or accidental code fences and trim to the outermost
+// { ... } before unmarshalling.
+func Parse(s string) (*Report, error) {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "```json")
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSuffix(s, "```")
+	s = strings.TrimSpace(s)
+
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start < 0 || end < 0 || end < start {
+		return nil, errors.New("no JSON object found")
+	}
+	s = s[start : end+1]
+
+	var report Report
+	if err := json.Unmarshal([]byte(s), &report); err != nil {
+		return nil, err
+	}
+	for i, f := range report.Findings {
+		sev := strings.ToLower(strings.TrimSpace(f.Severity))
+		switch sev {
+		case "problem", "warning", "info":
+			report.Findings[i].Severity = sev
+		default:
+			report.Findings[i].Severity = "info"
+		}
+	}
+	return &report, nil
+}

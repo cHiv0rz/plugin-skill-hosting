@@ -128,6 +128,7 @@ This table is hand-maintained against `values.yaml`. Update both when adding or 
 | `auth.oidc.clientID` | string | `"plugin-skill-hosting"` | OIDC client id. Required when `auth.mode=oidc`. |
 | `auth.oidc.redirectURL` | string | `""` | Defaults to `${publicBaseURL}/api/auth/oidc/callback` when empty. |
 | `auth.oidc.scopes` | string | `"openid email profile"` | Space-separated OIDC scopes. |
+| `auth.oidc.googleWorkspaceDomains` | list | `[]` | Allowlist of Google Workspace `hd` domains. Only enforced when the issuer is Google; ignored for any other IdP. Empty disables the check (a startup `WARN` is logged). With a single domain the auth URL also gets `hd=<domain>` so Google pre-filters the account chooser. |
 | `backend.image.repository` | string | `"registry.oglimmer.com/plugin-skill-hosting-backend"` | Backend container image repository. |
 | `backend.image.tag` | string | `"latest"` | Backend image tag. Pin to a git sha in production for clean rollbacks. |
 | `backend.image.pullPolicy` | string | `"Always"` | Backend image pull policy. |

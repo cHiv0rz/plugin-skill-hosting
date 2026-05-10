@@ -29,6 +29,14 @@ auth:
     # Defaults to "${publicBaseURL}/api/auth/oidc/callback" when empty.
     redirectURL: ""
     scopes: "openid email profile"
+    # Google Workspace allowlist. Only enforced when the issuer is Google
+    # (https://accounts.google.com); a no-op for any other IdP, so test
+    # providers like Keycloak are unaffected. Empty = no restriction.
+    # Multiple domains allowed; with exactly one, the auth URL is decorated
+    # with hd=<domain> so Google pre-filters the account chooser.
+    googleWorkspaceDomains: []
+    # - yourcompany.com
+    # - subsidiary.com
 
 # Backend (API + git smart-HTTP) configuration
 backend:

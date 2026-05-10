@@ -85,6 +85,10 @@ spec:
           value: {{ .Values.auth.oidc.redirectURL | quote }}
         - name: OIDC_SCOPES
           value: {{ .Values.auth.oidc.scopes | quote }}
+        {{- with .Values.auth.oidc.googleWorkspaceDomains }}
+        - name: OIDC_GOOGLE_WORKSPACE_DOMAINS
+          value: {{ join "," . | quote }}
+        {{- end }}
         - name: OIDC_CLIENT_SECRET
           valueFrom:
             secretKeyRef:

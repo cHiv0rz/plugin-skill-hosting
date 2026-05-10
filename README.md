@@ -68,8 +68,18 @@ Set on the backend container:
 | `OIDC_CLIENT_SECRET` | yes | — |
 | `OIDC_REDIRECT_URL` | no | `${PUBLIC_BASE_URL}/api/auth/oidc/callback` |
 | `OIDC_SCOPES` | no | `openid email profile` |
+| `OIDC_GOOGLE_WORKSPACE_DOMAINS` | no | — |
 
 Register `${PUBLIC_BASE_URL}/api/auth/oidc/callback` as an allowed redirect URI in your IdP. After a successful exchange the backend redirects the browser to `${PUBLIC_BASE_URL}/auth/callback#token=…&user=…` (the SPA reads the hash and stores the session).
+
+### Google Workspace restriction
+
+When the IdP is Google, you can pin sign-in to one or more Google Workspace domains via `OIDC_GOOGLE_WORKSPACE_DOMAINS` (comma-separated, e.g. `yourcompany.com,subsidiary.com`). The check has two parts:
+
+- **UI hint** — if exactly one domain is configured, the backend appends `hd=<domain>` to the Google authorisation URL so the account chooser pre-filters to that workspace. With multiple domains the hint is omitted (Google only honours a single value); backend validation still applies.
+- **Authoritative check** — after the ID token is verified, the backend reads the `hd` claim and rejects sign-ins whose domain is not in the allowlist. Rejections respond `HTTP 401` with `{"error":"workspace domain not allowed"}` and write a `WARN` audit log line containing the rejected `hd`, email, sub, and issuer. The error message is intentionally generic and does not leak the configured domains.
+
+If the list is empty, no restriction is applied and a startup warning is logged. The check is also a no-op for non-Google issuers, so generic OIDC providers (Keycloak, Auth0 dev tenants, etc.) used for local testing are unaffected.
 
 ## MCP server
 

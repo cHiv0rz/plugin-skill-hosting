@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -98,7 +99,16 @@ func (a *App) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	a.setShortLivedCookie(w, oidcStateCookie, state)
 	a.setShortLivedCookie(w, oidcNonceCookie, nonce)
-	authURL := a.oidc.oauth2.AuthCodeURL(state, oidc.Nonce(nonce))
+
+	opts := []oauth2.AuthCodeOption{oidc.Nonce(nonce)}
+	// UI hint only: when exactly one Workspace domain is configured, ask Google
+	// to pre-filter the account chooser. Google only honours a single `hd`, so
+	// with multiple configured domains we omit the hint and let the user pick.
+	// Backend validation in handleOIDCCallback is the authoritative check.
+	if len(a.cfg.AllowedGoogleWorkspaceDomains) == 1 {
+		opts = append(opts, oauth2.SetAuthURLParam("hd", a.cfg.AllowedGoogleWorkspaceDomains[0]))
+	}
+	authURL := a.oidc.oauth2.AuthCodeURL(state, opts...)
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -109,6 +119,7 @@ type oidcClaims struct {
 	PreferredUsername string `json:"preferred_username"`
 	Name              string `json:"name"`
 	Nonce             string `json:"nonce"`
+	HD                string `json:"hd"` // Google Workspace hosted-domain claim
 }
 
 func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +172,17 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if claims.Sub == "" {
 		a.oidcFail(w, r, "missing sub claim")
+		return
+	}
+
+	// Per spec: when the Google Workspace allowlist is configured and the `hd`
+	// claim is missing/disallowed, return a structured 401 (not the SPA-
+	// redirect path used for other failures) and audit-log the rejection.
+	// The error message is generic to avoid leaking the configured domains.
+	if err := validateGoogleWorkspaceHD(idToken.Issuer, claims.HD, a.cfg.AllowedGoogleWorkspaceDomains); err != nil {
+		log.Printf("WARN: oidc workspace domain rejected: hd=%q email=%q sub=%q issuer=%q",
+			claims.HD, claims.Email, claims.Sub, idToken.Issuer)
+		writeErr(w, http.StatusUnauthorized, "workspace domain not allowed")
 		return
 	}
 

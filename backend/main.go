@@ -33,6 +33,12 @@ type Config struct {
 	OIDCRedirectURL  string // defaults to PublicBaseURL + "/auth/callback/oidc"
 	OIDCScopes       string // space-separated; defaults to "openid email profile"
 
+	// AllowedGoogleWorkspaceDomains, when non-empty, restricts Google sign-in
+	// to ID tokens whose `hd` claim is in this list. Only applied when the
+	// issuer is Google — generic OIDC providers (e.g. dev/test IdPs) are not
+	// affected, so an empty list also means "no restriction".
+	AllowedGoogleWorkspaceDomains []string
+
 	AnthropicAPIKey string
 	AnthropicModel  string
 }
@@ -56,6 +62,8 @@ func loadConfig() Config {
 		OIDCRedirectURL:  getenv("OIDC_REDIRECT_URL", ""),
 		OIDCScopes:       getenv("OIDC_SCOPES", "openid email profile"),
 
+		AllowedGoogleWorkspaceDomains: parseDomainList(getenv("OIDC_GOOGLE_WORKSPACE_DOMAINS", "")),
+
 		AnthropicAPIKey: getenv("ANTHROPIC_API_KEY", ""),
 		AnthropicModel:  getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
 	}
@@ -65,6 +73,9 @@ func loadConfig() Config {
 	if c.OIDCRedirectURL == "" {
 		c.OIDCRedirectURL = strings.TrimRight(c.PublicBaseURL, "/") + "/api/auth/oidc/callback"
 	}
+	if c.AuthMode == "oidc" && len(c.AllowedGoogleWorkspaceDomains) == 0 {
+		log.Printf("WARN: AUTH_MODE=oidc but OIDC_GOOGLE_WORKSPACE_DOMAINS is empty — Google Workspace domain restriction is disabled")
+	}
 	return c
 }
 
@@ -73,6 +84,21 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func parseDomainList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func main() {

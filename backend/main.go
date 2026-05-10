@@ -127,6 +127,11 @@ func main() {
 		r.Mount("/git", app.gitHandler())
 	})
 
+	r.Group(func(r chi.Router) {
+		r.Use(app.mcpTokenGateMiddleware)
+		r.Mount("/mcp", app.mcpHandler())
+	})
+
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/auth/config", app.handleAuthConfig)
 

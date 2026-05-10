@@ -129,6 +129,26 @@ func (a *App) tokenGateMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// mcpTokenGateMiddleware is the /mcp variant: same Bearer/Basic acceptance as
+// the regular gate, but the 401 challenge advertises Bearer rather than Basic.
+// MCP clients use the WWW-Authenticate scheme to decide their auth UX, and a
+// Basic challenge here pushes them into the OAuth-fallback path.
+func (a *App) mcpTokenGateMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, errMsg := a.authenticateRequest(r)
+		if u == nil {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="plugin-marketplace"`)
+			if errMsg == "" {
+				errMsg = "authentication required"
+			}
+			writeErr(w, http.StatusUnauthorized, errMsg)
+			return
+		}
+		ctx := context.WithValue(r.Context(), ctxUserKey, u)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func generateAPIToken() (string, error) {
 	return randHex(32)
 }

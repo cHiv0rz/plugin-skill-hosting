@@ -35,6 +35,21 @@ const authedOrigin = computed(() => {
 const marketplaceUrl = computed(() => `${authedOrigin.value}/marketplace.json`)
 const marketplaceCmd = computed(() => `/plugin marketplace add ${marketplaceUrl.value}`)
 
+const mcpUrl = computed(() => `${window.location.origin}/mcp`)
+const mcpServerName = computed(() => auth.marketplaceName || 'skill-host')
+const mcpAddCmd = computed(() =>
+  `claude mcp add --transport http ${mcpServerName.value} ${mcpUrl.value} -H "Authorization: Bearer ${apiToken.value}"`
+)
+const mcpJsonConfig = computed(() => JSON.stringify({
+  mcpServers: {
+    [mcpServerName.value]: {
+      type: 'http',
+      url: mcpUrl.value,
+      headers: { Authorization: `Bearer ${apiToken.value}` },
+    },
+  },
+}, null, 2))
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -126,6 +141,39 @@ onMounted(load)
         </button>
       </div>
       <div v-if="tokenError" class="error" style="margin-top: 8px">{{ tokenError }}</div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-bottom: 4px">Use this marketplace as an MCP server</h2>
+    <p class="muted" style="margin: 0 0 12px">
+      Lets Claude (or any MCP-aware client) read plugins and create / modify skills directly.
+      Tools: <code>list_plugins</code>, <code>get_plugin</code>, <code>get_skill</code>,
+      <code>create_skill</code>, <code>update_skill</code>, <code>list_skill_files</code>,
+      <code>get_skill_file</code>, <code>upsert_skill_file</code>.
+      Plugins are read-only over MCP; nothing can be deleted.
+    </p>
+
+    <p style="margin: 0 0 4px"><strong>Claude Code (one-line install):</strong></p>
+    <pre style="white-space: pre-wrap; word-break: break-all">{{ mcpAddCmd }}</pre>
+    <div class="row" style="gap: 8px">
+      <button class="secondary" type="button" @click="copy(mcpAddCmd, 'mcpCmd')">
+        {{ copied === 'mcpCmd' ? 'Copied' : 'Copy command' }}
+      </button>
+      <button class="secondary" type="button" @click="copy(mcpUrl, 'mcpUrl')">
+        {{ copied === 'mcpUrl' ? 'Copied' : 'Copy URL' }}
+      </button>
+    </div>
+
+    <details style="margin-top: 20px">
+      <summary class="muted" style="cursor: pointer">JSON config (Claude Desktop and other MCP clients)</summary>
+      <p class="muted" style="margin: 8px 0">
+        Paste under <code>mcpServers</code> in your client's MCP config.
+      </p>
+      <pre style="white-space: pre-wrap; word-break: break-all">{{ mcpJsonConfig }}</pre>
+      <button class="secondary" type="button" @click="copy(mcpJsonConfig, 'mcpJson')">
+        {{ copied === 'mcpJson' ? 'Copied' : 'Copy JSON' }}
+      </button>
     </details>
   </div>
 

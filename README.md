@@ -6,7 +6,9 @@ A self-hosted, **token-gated** Claude Code plugin marketplace. Developers sign u
 /plugin marketplace add https://_:<api-token>@your-host/marketplace.json
 ```
 
-Every endpoint that exposes plugin data — `marketplace.json`, the git smart-HTTP repos, and the read APIs — requires a valid token. The token is generated per user and shown on the front page. Anyone holding the token can clone repos and read the marketplace as that user.
+The same per-user token also unlocks a built-in **MCP server** at `/mcp` so Claude (or any MCP-aware client) can read plugins and create / modify skills directly — useful for evolving a skill from inside an editing session instead of bouncing back to the web UI.
+
+Every endpoint that exposes plugin data — `marketplace.json`, the git smart-HTTP repos, `/mcp`, and the read APIs — requires a valid token. The token is generated per user and shown on the front page. Anyone holding the token can clone repos, drive the MCP server, and read the marketplace as that user.
 
 ## How it works
 
@@ -17,16 +19,22 @@ When a Claude Code user adds a marketplace, two things happen:
 2. **`git clone /git/<plugin-name>.git`** — when the user installs or updates a plugin, Claude Code clones the bare git repo served by the backend. The repo contains:
    - `.claude-plugin/plugin.json` — plugin manifest
    - `skills/<skill-name>/SKILL.md` — one file per skill, with YAML frontmatter
+   - `skills/<skill-name>/{scripts,references,assets}/…` — optional supporting files for multi-file skills
    - `README.md`
 
-The backend keeps Postgres as the source of truth. Whenever you create, edit, or delete a plugin/skill via the API, it **materialises** the plugin into a working tree, commits, and force-pushes to a bare repo on disk under `/data/repos/<plugin>.git`. That bare repo is served via git smart HTTP using [`gitkit`](https://github.com/sosedoff/gitkit), which wraps `git http-backend`.
+The backend keeps Postgres as the source of truth. Whenever you create, edit, or delete a plugin/skill via the API (or via MCP), it **materialises** the plugin into a working tree, commits, and force-pushes to a bare repo on disk under `/data/repos/<plugin>.git`. That bare repo is served via git smart HTTP using [`gitkit`](https://github.com/sosedoff/gitkit), which wraps `git http-backend`.
+
+Independently, **`/mcp`** exposes a Model Context Protocol server (Streamable HTTP transport) bound to the same per-user token. Tools cover read-only access to plugins and full create/update access to skills and their supporting files — every write goes through the same materialise-and-commit pipeline, so MCP edits show up in the git repo and the marketplace immediately. See [§MCP server](#mcp-server) below.
+
+Plugin and skill versions are managed automatically: the first plugin a user creates starts at `0.1.0`, every subsequent plugin starts at `1.0.0`, and edits bump major / minor / patch based on the kind of change (skill add or delete → major; large body edits → minor; small edits and file uploads → patch). Deletes are **soft** — both plugins and skills can be restored — and every skill edit snapshots the description, body, and file tree into a versions table so you can revert to any earlier point.
 
 ## Stack
 
-- **Backend**: Go + chi + lib/pq + JWT (golang-jwt) + bcrypt + gitkit
+- **Backend**: Go 1.25 + chi + lib/pq + JWT (golang-jwt) + bcrypt + gitkit + the official [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) for the MCP server
 - **Frontend**: Vue 3 + Vite + Pinia + vue-router (TypeScript)
 - **Database**: Postgres 16
-- **Reverse proxy**: nginx (in the frontend container) — proxies `/api`, `/git`, `/marketplace.json` to the backend
+- **Reverse proxy**: nginx (in the frontend container) — proxies `/api`, `/git`, `/mcp`, `/marketplace.json` to the backend
+- **Optional**: an `ANTHROPIC_API_KEY` enables the in-app skill validator (POST `/api/skills/validate`) which runs a skill body through the Anthropic API for static review
 
 ## Authentication
 
@@ -37,10 +45,12 @@ The backend supports two **sign-in** modes, picked at startup via `AUTH_MODE`:
 
 Inside the SPA, sessions ride on a JWT in `localStorage` sent as `Authorization: Bearer <jwt>`.
 
-In addition, every user is issued a long-lived **API token** at registration. This token gates `/marketplace.json`, `/git/<plugin>.git/...`, and the read-only plugin APIs. It is accepted via:
+In addition, every user is issued a long-lived **API token** at registration. This token gates `/marketplace.json`, `/git/<plugin>.git/...`, `/mcp`, and the read-only plugin APIs. It is accepted via:
 
-- `Authorization: Bearer <api-token>` — for API calls
+- `Authorization: Bearer <api-token>` — for API calls and MCP calls
 - HTTP Basic Auth where the **password** is the token (username can be anything, e.g. `_`) — for `git clone` and Claude Code's marketplace fetch
+
+Unauthenticated `/marketplace.json` and `/git/...` answer with `WWW-Authenticate: Basic` so `git clone` and `curl` prompt for credentials. Unauthenticated `/mcp` answers with `WWW-Authenticate: Bearer realm="plugin-marketplace"` so MCP clients pick the bearer flow rather than fall back to OAuth discovery.
 
 The token is shown on the home page after sign-in and can be regenerated from there.
 
@@ -148,7 +158,7 @@ Override the registry with `--registries my-registry.com` or `DEFAULT_REGISTRIES
 ### Notes
 
 - The backend container runs as UID 10001; `podSecurityContext.fsGroup: 10001` makes the `/data` PVC group-writable. If you change the image's user, update both.
-- Ingress path order matters — backend prefixes (`/api`, `/git`, `/marketplace.json`, `/healthz`) must precede the `/` catch-all that goes to the frontend. The bundled values get this right; preserve order if you edit them.
+- Ingress path order matters — backend prefixes (`/api`, `/git`, `/mcp`, `/marketplace.json`, `/healthz`) must precede the `/` catch-all that goes to the frontend. The bundled values get this right; preserve order if you edit them.
 - The git smart-HTTP endpoint needs `nginx.ingress.kubernetes.io/proxy-request-buffering: "off"` and a generous `proxy-body-size` — both already set in `values.yaml`.
 - Both PVCs (`-data` for git, Postgres data) survive `helm uninstall`. Snapshot them before destroying the release.
 

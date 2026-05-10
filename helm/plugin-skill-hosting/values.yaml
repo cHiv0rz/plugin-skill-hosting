@@ -114,6 +114,12 @@ ingress:
     # for pushes; the nginx ingress defaults are fine for clones.
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    # MCP Streamable HTTP keeps a long-lived GET stream open for SSE; turn off
+    # response buffering and raise the read/send timeouts so events flow
+    # immediately and the stream isn't reaped after 60s.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
   hosts:
     - host: ai-plugins.oglimmer.com
       paths:
@@ -121,6 +127,9 @@ ingress:
           pathType: Prefix
           backend: api
         - path: /git
+          pathType: Prefix
+          backend: api
+        - path: /mcp
           pathType: Prefix
           backend: api
         - path: /marketplace.json

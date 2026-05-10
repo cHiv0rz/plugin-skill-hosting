@@ -255,12 +255,32 @@ describe('useSkillFileManager — uploadList', () => {
   it('skips invalid filenames and records an error', async () => {
     vi.mocked(api.listSkillFiles).mockResolvedValue([])
     const { fm } = setup()
-    const bad = makeTextFile('has space.py', 'x')
+    // sanitizeUploadedFilename strips an all-dots name down to "", which the
+    // uploader rejects.
+    const bad = makeTextFile('...', 'x')
     const input = { files: [bad] as unknown as FileList, value: 'x' } as HTMLInputElement
     await fm.onUploadChange('scripts', { target: input } as unknown as Event)
     expect(fm.fileError.value).toContain('skipped invalid filename')
     expect(api.putSkillFile).not.toHaveBeenCalled()
     expect(input.value).toBe('')
+  })
+
+  it('sanitizes filenames with unsafe characters before uploading', async () => {
+    vi.mocked(api.putSkillFile).mockResolvedValue({
+      path: 'scripts/has_space.py', content: '', isBinary: false, sizeBytes: 0, updatedAt: '',
+    })
+    vi.mocked(api.listSkillFiles).mockResolvedValue([])
+    vi.mocked(api.getSkillFile).mockResolvedValue({
+      path: 'scripts/has_space.py', content: 'x', isBinary: false, sizeBytes: 1, updatedAt: '',
+    })
+    const { fm } = setup()
+    const renamed = makeTextFile('has space.py', 'x')
+    const input = { files: [renamed] as unknown as FileList, value: 'x' } as HTMLInputElement
+    await fm.onUploadChange('scripts', { target: input } as unknown as Event)
+    expect(api.putSkillFile).toHaveBeenCalledWith(PLUGIN, SKILL, 'scripts/has_space.py', {
+      content: 'x', isBinary: false,
+    })
+    expect(fm.fileError.value).toBe('')
   })
 
   it('uploads valid text files and selects the last one', async () => {

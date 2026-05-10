@@ -3,6 +3,7 @@ import { computed, onMounted } from 'vue'
 import NavBar from './components/NavBar.vue'
 import SiteFooter from './components/Footer.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import PromptDialog from './components/PromptDialog.vue'
 import { useAuthStore } from './stores/auth'
 import { useRoute } from 'vue-router'
 
@@ -31,6 +32,7 @@ onMounted(() => {
     </div>
   </template>
   <ConfirmDialog />
+  <PromptDialog />
 </template>
 
 <style scoped>

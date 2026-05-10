@@ -17,6 +17,11 @@ vi.mock('./useConfirm', () => ({
   useConfirm: () => ({ confirm: confirmMock }),
 }))
 
+const promptMock = vi.fn()
+vi.mock('./usePrompt', () => ({
+  usePrompt: () => ({ prompt: promptMock }),
+}))
+
 import { api } from '../api'
 import {
   useSkillFileManager,
@@ -57,6 +62,7 @@ function setup(opts: { onChanged?: () => Promise<void> | void } = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   confirmMock.mockResolvedValue(true)
+  promptMock.mockResolvedValue(null)
 })
 
 describe('useSkillFileManager — helpers', () => {
@@ -189,16 +195,31 @@ describe('useSkillFileManager — deleteCurrentFile', () => {
 
 describe('useSkillFileManager — promptNewFile', () => {
   it('rejects invalid filenames without API calls', async () => {
-    vi.stubGlobal('prompt', vi.fn().mockReturnValue('../bad name'))
+    promptMock.mockResolvedValueOnce('../bad name')
     const { fm } = setup()
     await fm.promptNewFile('scripts')
     expect(fm.fileError.value).toContain('invalid filename')
     expect(api.putSkillFile).not.toHaveBeenCalled()
-    vi.unstubAllGlobals()
+  })
+
+  it('is a no-op when the prompt is cancelled', async () => {
+    promptMock.mockResolvedValueOnce(null)
+    const { fm } = setup()
+    await fm.promptNewFile('scripts')
+    expect(api.putSkillFile).not.toHaveBeenCalled()
+    expect(fm.fileError.value).toBe('')
+  })
+
+  it('is a no-op when the prompt is empty', async () => {
+    promptMock.mockResolvedValueOnce('   ')
+    const { fm } = setup()
+    await fm.promptNewFile('scripts')
+    expect(api.putSkillFile).not.toHaveBeenCalled()
+    expect(fm.fileError.value).toBe('')
   })
 
   it('selects the existing file when path already present', async () => {
-    vi.stubGlobal('prompt', vi.fn().mockReturnValue('a.py'))
+    promptMock.mockResolvedValueOnce('a.py')
     vi.mocked(api.listSkillFiles).mockResolvedValue([
       { path: 'scripts/a.py', sizeBytes: 1, isBinary: false, updatedAt: '' },
     ])
@@ -210,11 +231,10 @@ describe('useSkillFileManager — promptNewFile', () => {
     await fm.promptNewFile('scripts')
     expect(api.putSkillFile).not.toHaveBeenCalled()
     expect(fm.selectedPath.value).toBe('scripts/a.py')
-    vi.unstubAllGlobals()
   })
 
   it('creates and selects a new file', async () => {
-    vi.stubGlobal('prompt', vi.fn().mockReturnValue('new.py'))
+    promptMock.mockResolvedValueOnce('new.py')
     vi.mocked(api.putSkillFile).mockResolvedValue({
       path: 'scripts/new.py', content: '', isBinary: false, sizeBytes: 0, updatedAt: '',
     })
@@ -228,7 +248,6 @@ describe('useSkillFileManager — promptNewFile', () => {
       content: '', isBinary: false,
     })
     expect(fm.selectedPath.value).toBe('scripts/new.py')
-    vi.unstubAllGlobals()
   })
 })
 

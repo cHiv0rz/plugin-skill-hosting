@@ -2,6 +2,7 @@ import { ref, computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { api, errMsg } from '../api'
 import type { SkillFileSummary } from '../types'
 import { useConfirm } from './useConfirm'
+import { usePrompt } from './usePrompt'
 
 export type SkillFolder = 'scripts' | 'references' | 'assets'
 
@@ -62,6 +63,7 @@ export function useSkillFileManager(
   options: UseSkillFileManagerOptions = {},
 ) {
   const { confirm } = useConfirm()
+  const { prompt } = usePrompt()
   const onChanged = options.onChanged
 
   const files = ref<SkillFileSummary[]>([])
@@ -201,11 +203,15 @@ export function useSkillFileManager(
   async function promptNewFile(folder: SkillFolder) {
     const ctx = requireSkill()
     if (!ctx) return
-    const raw = window.prompt(
-      `New file under ${folder}/\nEnter relative path (e.g. build.py or sub/util.sh):`,
-    )
-    if (!raw) return
+    const raw = await prompt({
+      title: `New file in ${folder}/`,
+      message: 'Enter a relative path (e.g. build.py or sub/util.sh).',
+      placeholder: 'build.py',
+      confirmLabel: 'Create',
+    })
+    if (raw === null) return
     const trimmed = raw.trim().replace(/^\/+/, '')
+    if (!trimmed) return
     if (!FILENAME_RE.test(trimmed)) {
       fileError.value = `invalid filename: ${trimmed}`
       return

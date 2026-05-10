@@ -12,6 +12,11 @@ marketplaceName: "oglimmer-marketplace"
 # Default license prefilled in the "new plugin" form.
 defaultLicense: "MIT"
 
+# Anthropic / Claude API integration. The API key itself goes into the sealed
+# secret under the ANTHROPIC_API_KEY key; only the model id is set here.
+anthropic:
+  model: "claude-sonnet-4-6"
+
 # Authentication mode: "password" (built-in email/password + JWT) or "oidc"
 # (OpenID Connect Authorization Code flow). When mode=oidc, the sealed secret
 # must additionally carry OIDC_CLIENT_SECRET; the other OIDC_* values are

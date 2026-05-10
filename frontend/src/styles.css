@@ -462,6 +462,119 @@ summary:hover { color: var(--accent); }
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-soft); }
 
+/* Claude review (skill validation) ──────────────────────────── */
+.review-summary {
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--text);
+  margin: 6px 0 14px;
+}
+
+.review-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.finding-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+.finding-chip.problem {
+  color: var(--rust);
+  border-color: rgba(214, 90, 49, 0.5);
+  background: rgba(214, 90, 49, 0.10);
+}
+.finding-chip.warning {
+  color: var(--accent-2);
+  border-color: rgba(245, 165, 36, 0.5);
+  background: rgba(245, 165, 36, 0.10);
+}
+.finding-chip.info {
+  color: var(--text-soft);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.finding {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 4px;
+  padding: 12px 14px;
+  background: var(--panel-2);
+}
+.finding--problem { border-left-color: var(--rust); }
+.finding--warning { border-left-color: var(--accent); }
+.finding--info    { border-left-color: var(--border); }
+
+.finding-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.finding-title {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.finding-detail {
+  margin: 8px 0 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.suggested-desc {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: rgba(245, 165, 36, 0.05);
+}
+.suggested-desc-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  margin-bottom: 6px;
+}
+.suggested-desc-text {
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

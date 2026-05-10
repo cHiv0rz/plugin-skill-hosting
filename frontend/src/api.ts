@@ -134,4 +134,23 @@ export const api = {
     request<Skill>(`/api/plugins/${pluginName}/skills/${skillName}/revert/${version}`, {
       method: 'POST',
     }),
+  validateSkill: (data: { name: string; description: string; body: string }) =>
+    request<ValidationReport>(`/api/skills/validate`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+}
+
+export type FindingSeverity = 'problem' | 'warning' | 'info'
+
+export interface Finding {
+  severity: FindingSeverity
+  title: string
+  detail: string
+}
+
+export interface ValidationReport {
+  summary: string
+  findings: Finding[]
+  suggestedDescription?: string
 }

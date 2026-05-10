@@ -32,6 +32,9 @@ type Config struct {
 	OIDCClientSecret string
 	OIDCRedirectURL  string // defaults to PublicBaseURL + "/auth/callback/oidc"
 	OIDCScopes       string // space-separated; defaults to "openid email profile"
+
+	AnthropicAPIKey string
+	AnthropicModel  string
 }
 
 func loadConfig() Config {
@@ -52,6 +55,9 @@ func loadConfig() Config {
 		OIDCClientSecret: getenv("OIDC_CLIENT_SECRET", ""),
 		OIDCRedirectURL:  getenv("OIDC_REDIRECT_URL", ""),
 		OIDCScopes:       getenv("OIDC_SCOPES", "openid email profile"),
+
+		AnthropicAPIKey: getenv("ANTHROPIC_API_KEY", ""),
+		AnthropicModel:  getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
 	}
 	if c.AuthMode != "password" && c.AuthMode != "oidc" {
 		log.Fatalf("AUTH_MODE must be 'password' or 'oidc', got %q", c.AuthMode)
@@ -150,6 +156,7 @@ func main() {
 			r.Post("/plugins/{name}/skills/{skill}/restore", app.handleRestoreSkill)
 			r.Get("/plugins/{name}/skills/{skill}/versions", app.handleListSkillVersions)
 			r.Post("/plugins/{name}/skills/{skill}/revert/{version}", app.handleRevertSkill)
+			r.Post("/skills/validate", app.handleValidateSkill)
 		})
 	})
 

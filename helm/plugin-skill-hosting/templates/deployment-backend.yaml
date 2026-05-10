@@ -91,6 +91,16 @@ spec:
               name: {{ include "psh.secretName" . }}
               key: OIDC_CLIENT_SECRET
         {{- end }}
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "psh.secretName" . }}
+              key: ANTHROPIC_API_KEY
+              optional: true
+        {{- with .Values.anthropic.model }}
+        - name: ANTHROPIC_MODEL
+          value: {{ . | quote }}
+        {{- end }}
         volumeMounts:
         - name: data
           mountPath: /data

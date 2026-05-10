@@ -536,14 +536,14 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	// First skill in the plugin: no version bump (the plugin's initial
 	// version is its debut version), but still advance updated_at so listings
-	// re-sort. Subsequent additions bump minor.
+	// re-sort. Subsequent additions bump major.
 	if priorSkillCount == 0 {
 		if err := a.touchPluginUpdatedAt(r.Context(), p.ID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "db error")
 			return
 		}
 	} else {
-		if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpMinor); err != nil {
+		if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpMajor); err != nil {
 			writeErr(w, http.StatusInternalServerError, "db error")
 			return
 		}
@@ -590,7 +590,7 @@ func (a *App) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpPatch); err != nil {
+	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpKindForSizeChange(len(existing.Body), len(req.Body))); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -624,7 +624,7 @@ func (a *App) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpMinor); err != nil {
+	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpMajor); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -693,7 +693,7 @@ func (a *App) handleRestoreSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpMinor); err != nil {
+	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpMajor); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -817,6 +817,13 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var currentBody string
+	if err := a.db.QueryRowContext(r.Context(),
+		`SELECT body FROM skills WHERE id = $1`, skillID).Scan(&currentBody); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+
 	if _, err := a.db.ExecContext(r.Context(), `
 		UPDATE skills SET description = $1, body = $2, updated_at = now(), updated_by = $3,
 		                  deleted_at = NULL, deleted_by = NULL
@@ -829,7 +836,7 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpPatch); err != nil {
+	if err := a.bumpAndPersistPluginVersion(r.Context(), p, bumpKindForSizeChange(len(currentBody), len(targetBody))); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}

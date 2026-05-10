@@ -28,6 +28,26 @@ func parseSemver(v string) (int, int, int) {
 	return mj, mn, pt
 }
 
+// bumpKindForSizeChange picks a bump for a content edit: minor when the size
+// changed by more than 30% relative to the old size, otherwise patch. An empty
+// old body is treated as a >30% change for any non-empty new body.
+func bumpKindForSizeChange(oldSize, newSize int) bumpKind {
+	if oldSize == 0 {
+		if newSize == 0 {
+			return bumpPatch
+		}
+		return bumpMinor
+	}
+	delta := newSize - oldSize
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta*10 > oldSize*3 {
+		return bumpMinor
+	}
+	return bumpPatch
+}
+
 func bumpVersion(current string, kind bumpKind) string {
 	mj, mn, pt := parseSemver(current)
 	switch kind {

@@ -20,6 +20,7 @@ const deletedSkills = ref<Skill[]>([])
 const loading = ref(true)
 const error = ref('')
 const copied = ref('')
+const activeTab = ref<'skills' | 'connect'>('skills')
 
 const isOwner = computed(() =>
   !!(plugin.value && auth.user && plugin.value.ownerId === auth.user.id),
@@ -123,120 +124,206 @@ onMounted(() => {
     </div>
     <p class="muted" style="margin-top: 0">{{ plugin.description }}</p>
 
-    <div class="card">
-      <h2 style="margin-bottom: 4px">Install this plugin in Claude Code</h2>
-      <p class="muted" style="margin: 0 0 12px">
-        Make sure you've added the marketplace first (see the Plugins page).
-      </p>
-      <pre style="white-space: pre-wrap; word-break: break-all">{{ installCmd }}</pre>
-      <div class="row" style="gap: 8px">
-        <button class="secondary" type="button" @click="copy(installCmd, 'cmd')">
-          {{ copied === 'cmd' ? 'Copied' : 'Copy command' }}
-        </button>
-      </div>
+    <div class="tabs" role="tablist">
+      <button
+        type="button"
+        class="tab"
+        role="tab"
+        :class="{ active: activeTab === 'skills' }"
+        :aria-selected="activeTab === 'skills'"
+        @click="activeTab = 'skills'"
+      >
+        Skills
+        <span class="tab-count" :class="{ 'is-empty': (plugin.skills?.length ?? 0) === 0 }">
+          {{ plugin.skills?.length ?? 0 }}
+        </span>
+      </button>
+      <button
+        type="button"
+        class="tab"
+        role="tab"
+        :class="{ active: activeTab === 'connect' }"
+        :aria-selected="activeTab === 'connect'"
+        @click="activeTab = 'connect'"
+      >
+        Connect &amp; Meta
+      </button>
     </div>
 
-    <div class="card">
-      <div class="row">
-        <h2 style="margin: 0">Skills</h2>
-        <div class="spacer" />
-        <RouterLink
-          v-if="isAuthed"
-          :to="`/plugins/${plugin.name}/skills/new`"
-          class="btn"
-        >+ New skill</RouterLink>
-      </div>
-      <p v-if="!plugin.skills || plugin.skills.length === 0" class="muted">
-        No skills yet.
-      </p>
-      <table v-else>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Description</th>
-            <th>Created</th>
-            <th>Last edited</th>
-            <th v-if="isAuthed"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in plugin.skills" :key="s.id">
-            <td>
-              <RouterLink
-                v-if="isAuthed"
-                :to="`/plugins/${plugin.name}/skills/${s.name}/edit`"
-              >{{ s.name }}</RouterLink>
-              <span v-else>{{ s.name }}</span>
-            </td>
-            <td>{{ s.description }}</td>
-            <td class="muted" style="white-space: nowrap">
-              <span v-if="s.createdByName">{{ s.createdByName }}</span>
-              <span v-else>—</span>
-              <br />
-              <small>{{ fmt(s.createdAt) }}</small>
-            </td>
-            <td class="muted" style="white-space: nowrap">
-              <span v-if="s.updatedByName">{{ s.updatedByName }}</span>
-              <span v-else>—</span>
-              <br />
-              <small>{{ fmt(s.updatedAt) }}</small>
-            </td>
-            <td v-if="isAuthed" style="text-align: right">
-              <button class="secondary" @click="deleteSkill(s.name)">Delete</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div v-if="deletedSkills.length > 0" class="card">
-      <details>
-        <summary class="muted" style="cursor: pointer">
-          Deleted skills ({{ deletedSkills.length }})
-        </summary>
-        <p class="muted" style="margin: 12px 0">
-          Soft-deleted; restore to bring them back into the plugin.
+    <section v-show="activeTab === 'skills'" role="tabpanel">
+      <div class="card">
+        <div class="row">
+          <h2 style="margin: 0">Skills</h2>
+          <div class="spacer" />
+          <RouterLink
+            v-if="isAuthed"
+            :to="`/plugins/${plugin.name}/skills/new`"
+            class="btn"
+          >+ New skill</RouterLink>
+        </div>
+        <p v-if="!plugin.skills || plugin.skills.length === 0" class="muted">
+          No skills yet.
         </p>
-        <table>
+        <table v-else>
           <thead>
             <tr>
               <th>Name</th>
               <th>Description</th>
-              <th>Deleted</th>
+              <th>Created</th>
+              <th>Last edited</th>
               <th v-if="isAuthed"></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="s in deletedSkills" :key="s.id">
-              <td>{{ s.name }}</td>
+            <tr v-for="s in plugin.skills" :key="s.id">
+              <td>
+                <RouterLink
+                  v-if="isAuthed"
+                  :to="`/plugins/${plugin.name}/skills/${s.name}/edit`"
+                >{{ s.name }}</RouterLink>
+                <span v-else>{{ s.name }}</span>
+              </td>
               <td>{{ s.description }}</td>
               <td class="muted" style="white-space: nowrap">
-                <span v-if="s.deletedByName">{{ s.deletedByName }}</span>
+                <span v-if="s.createdByName">{{ s.createdByName }}</span>
                 <span v-else>—</span>
                 <br />
-                <small>{{ fmt(s.deletedAt) }}</small>
+                <small>{{ fmt(s.createdAt) }}</small>
+              </td>
+              <td class="muted" style="white-space: nowrap">
+                <span v-if="s.updatedByName">{{ s.updatedByName }}</span>
+                <span v-else>—</span>
+                <br />
+                <small>{{ fmt(s.updatedAt) }}</small>
               </td>
               <td v-if="isAuthed" style="text-align: right">
-                <button class="secondary" @click="restoreSkill(s.name)">Restore</button>
+                <button class="secondary" @click="deleteSkill(s.name)">Delete</button>
               </td>
             </tr>
           </tbody>
         </table>
-      </details>
-    </div>
+      </div>
 
-    <div class="card">
-      <h2>Metadata</h2>
-      <table>
-        <tbody>
-          <tr><th>Owner</th><td>{{ plugin.ownerName }}</td></tr>
-          <tr v-if="plugin.authorName"><th>Author</th><td>{{ plugin.authorName }}</td></tr>
-          <tr v-if="plugin.authorEmail"><th>Email</th><td>{{ plugin.authorEmail }}</td></tr>
-          <tr v-if="plugin.homepage"><th>Homepage</th><td><a :href="plugin.homepage" target="_blank">{{ plugin.homepage }}</a></td></tr>
-          <tr v-if="plugin.license"><th>License</th><td>{{ plugin.license }}</td></tr>
-          <tr><th>Updated</th><td>{{ fmt(plugin.updatedAt) }}</td></tr>
-        </tbody>
-      </table>
-    </div>
+      <div v-if="deletedSkills.length > 0" class="card">
+        <details>
+          <summary class="muted" style="cursor: pointer">
+            Deleted skills ({{ deletedSkills.length }})
+          </summary>
+          <p class="muted" style="margin: 12px 0">
+            Soft-deleted; restore to bring them back into the plugin.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Deleted</th>
+                <th v-if="isAuthed"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="s in deletedSkills" :key="s.id">
+                <td>{{ s.name }}</td>
+                <td>{{ s.description }}</td>
+                <td class="muted" style="white-space: nowrap">
+                  <span v-if="s.deletedByName">{{ s.deletedByName }}</span>
+                  <span v-else>—</span>
+                  <br />
+                  <small>{{ fmt(s.deletedAt) }}</small>
+                </td>
+                <td v-if="isAuthed" style="text-align: right">
+                  <button class="secondary" @click="restoreSkill(s.name)">Restore</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </details>
+      </div>
+    </section>
+
+    <section v-show="activeTab === 'connect'" role="tabpanel">
+      <div class="card">
+        <h2 style="margin-bottom: 4px">Install this plugin in Claude Code</h2>
+        <p class="muted" style="margin: 0 0 12px">
+          Make sure you've added the marketplace first (see the Plugins page).
+        </p>
+        <pre style="white-space: pre-wrap; word-break: break-all">{{ installCmd }}</pre>
+        <div class="row" style="gap: 8px">
+          <button class="secondary" type="button" @click="copy(installCmd, 'cmd')">
+            {{ copied === 'cmd' ? 'Copied' : 'Copy command' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Metadata</h2>
+        <table>
+          <tbody>
+            <tr><th>Owner</th><td>{{ plugin.ownerName }}</td></tr>
+            <tr v-if="plugin.authorName"><th>Author</th><td>{{ plugin.authorName }}</td></tr>
+            <tr v-if="plugin.authorEmail"><th>Email</th><td>{{ plugin.authorEmail }}</td></tr>
+            <tr v-if="plugin.homepage"><th>Homepage</th><td><a :href="plugin.homepage" target="_blank">{{ plugin.homepage }}</a></td></tr>
+            <tr v-if="plugin.license"><th>License</th><td>{{ plugin.license }}</td></tr>
+            <tr><th>Updated</th><td>{{ fmt(plugin.updatedAt) }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </template>
+
+<style scoped>
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin: 0 0 28px;
+}
+.tab {
+  background: transparent;
+  color: var(--text-soft);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 12px 22px;
+  margin-bottom: -1px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.tab::before { display: none; }
+.tab:hover { color: var(--text); transform: none; }
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  padding: 0 6px;
+  height: 18px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  transition: opacity 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.tab-count.is-empty {
+  opacity: 0;
+}
+.tab.active .tab-count {
+  color: var(--accent-2);
+  border-color: rgba(245, 165, 36, 0.45);
+}
+</style>

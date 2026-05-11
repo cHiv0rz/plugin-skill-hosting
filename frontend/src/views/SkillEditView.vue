@@ -12,6 +12,7 @@ import {
 } from '../composables/useSkillFileManager'
 import SkillVersionHistory from '../components/SkillVersionHistory.vue'
 import ErrorAlert from '../components/ErrorAlert.vue'
+import MarkdownEditor from '../components/MarkdownEditor.vue'
 import { usePluginStore } from '../stores/plugins'
 
 const pluginStore = usePluginStore()
@@ -277,7 +278,7 @@ watch(() => props.skillName, load)
       <textarea v-model="description" required rows="6" class="description-textarea" />
 
       <label>Body (Markdown — becomes the contents of SKILL.md after the frontmatter)</label>
-      <textarea v-model="body" />
+      <MarkdownEditor v-model="body" />
 
       <ErrorAlert :message="error" />
       <div class="row" style="margin-top: 16px; gap: 8px; flex-wrap: wrap">
@@ -360,7 +361,7 @@ watch(() => props.skillName, load)
         <textarea v-model="description" required rows="6" class="description-textarea" />
 
         <label>Body (Markdown — becomes the contents of SKILL.md after the frontmatter)</label>
-        <textarea v-model="body" />
+        <MarkdownEditor v-model="body" />
 
         <ErrorAlert :message="error" />
         <div class="row" style="margin-top: 16px; gap: 8px; flex-wrap: wrap">

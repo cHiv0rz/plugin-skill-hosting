@@ -202,5 +202,4 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-imagePullSecrets:
-  - name: oglimmerregistrykey
+imagePullSecrets: []

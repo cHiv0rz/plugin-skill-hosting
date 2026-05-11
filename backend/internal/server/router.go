@@ -79,6 +79,7 @@ func NewRouter(app *App) http.Handler {
 				r.Delete("/plugins/{name}", app.handleDeletePlugin)
 				r.Post("/plugins/{name}/restore", app.handleRestorePlugin)
 				r.Post("/plugins/{name}/skills", app.handleCreateSkill)
+				r.Post("/plugins/{name}/skills/import", app.handleImportSkill)
 				r.Put("/plugins/{name}/skills/{skill}", app.handleUpdateSkill)
 				r.Delete("/plugins/{name}/skills/{skill}", app.handleDeleteSkill)
 				r.Get("/plugins/{name}/deleted-skills", app.handleListDeletedSkills)

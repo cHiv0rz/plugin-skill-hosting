@@ -74,6 +74,27 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  importSkill: async (pluginName: string, zip: File): Promise<Skill> => {
+    const form = new FormData()
+    form.append('file', zip)
+    const headers = new Headers()
+    const t = token()
+    if (t) headers.set('Authorization', `Bearer ${t}`)
+    const res = await fetch(`/api/plugins/${pluginName}/skills/import`, {
+      method: 'POST',
+      headers,
+      body: form,
+    })
+    if (!res.ok) {
+      let msg = res.statusText
+      try {
+        const data = await res.json()
+        if (data && data.error) msg = data.error
+      } catch {}
+      throw new Error(msg)
+    }
+    return res.json() as Promise<Skill>
+  },
   updateSkill: (pluginName: string, skillName: string, data: Partial<Skill>) =>
     request<void>(`/api/plugins/${pluginName}/skills/${skillName}`, {
       method: 'PUT',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, errMsg } from '../api'
 import type { ValidationReport, FindingSeverity } from '../types'
@@ -30,6 +30,8 @@ const description = ref('')
 const body = ref(defaultBody())
 const error = ref('')
 const loading = ref(false)
+const importing = ref(false)
+const importInput = ref<HTMLInputElement | null>(null)
 const versionHistory = ref<InstanceType<typeof SkillVersionHistory> | null>(null)
 const validating = ref(false)
 const validationReport = ref<ValidationReport | null>(null)
@@ -142,6 +144,27 @@ async function load() {
   }
 }
 
+function triggerImport() {
+  importInput.value?.click()
+}
+
+async function onImportFile(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  error.value = ''
+  importing.value = true
+  try {
+    const s = await api.importSkill(props.pluginName, file)
+    router.push(`/plugins/${props.pluginName}/skills/${s.name}/edit`)
+  } catch (e: unknown) {
+    error.value = errMsg(e)
+  } finally {
+    importing.value = false
+  }
+}
+
 async function submit() {
   error.value = ''
   loading.value = true
@@ -151,19 +174,14 @@ async function submit() {
         description: description.value,
         body: body.value,
       })
-      await Promise.all([
-        versionHistory.value?.reload(),
-        loadFiles(),
-        pluginStore.refreshCurrent(),
-      ])
     } else {
       await api.createSkill(props.pluginName, {
         name: name.value,
         description: description.value,
         body: body.value,
       })
-      router.push(`/plugins/${props.pluginName}`)
     }
+    router.push(`/plugins/${props.pluginName}`)
   } catch (e: unknown) {
     error.value = errMsg(e)
   } finally {
@@ -214,6 +232,10 @@ async function revert(version: number) {
 }
 
 onMounted(load)
+// Same component backs /skills/new and /skills/:name/edit, so a route change
+// (e.g. just after import) reuses the instance and skips onMounted — reload
+// explicitly when the target skill name changes.
+watch(() => props.skillName, load)
 </script>
 
 <template>
@@ -221,6 +243,28 @@ onMounted(load)
 
   <!-- Create mode: simple single-column form (no file tree until skill exists) -->
   <div v-if="!isEdit" class="card">
+    <input
+      ref="importInput"
+      type="file"
+      accept=".zip,application/zip"
+      style="display: none"
+      @change="onImportFile"
+    />
+    <div class="row" style="margin-bottom: 16px; gap: 8px; flex-wrap: wrap; align-items: center">
+      <p class="muted" style="margin: 0; flex: 1; min-width: 240px">
+        Have a skill already packaged as a ZIP? Import its <code>SKILL.md</code> and
+        <code>scripts/</code>, <code>references/</code>, <code>assets/</code> folders in one go.
+      </p>
+      <button
+        type="button"
+        class="secondary"
+        :disabled="importing"
+        @click="triggerImport"
+      >
+        {{ importing ? 'Importing…' : 'Import from ZIP' }}
+      </button>
+    </div>
+
     <form @submit.prevent="submit">
       <label>Skill name (slug, lowercase, [a-z0-9-])</label>
       <input
@@ -237,7 +281,7 @@ onMounted(load)
 
       <ErrorAlert :message="error" />
       <div class="row" style="margin-top: 16px; gap: 8px; flex-wrap: wrap">
-        <button type="submit" :disabled="loading">
+        <button type="submit" :disabled="loading || importing">
           {{ loading ? 'Saving…' : 'Create skill' }}
         </button>
         <button

@@ -44,6 +44,41 @@ import ParamRow from '../ParamRow.vue'
     </Endpoint>
 
     <Endpoint
+      method="POST"
+      path="/api/plugins/{name}/skills/import"
+      summary="Create a skill by uploading a packaged ZIP archive."
+    >
+      <template #request>
+        <p>
+          <code>multipart/form-data</code> with a single <code>file</code> field
+          containing the ZIP. Max archive size <strong>110 MB</strong>.
+        </p>
+        <p>
+          The ZIP must contain a <code>SKILL.md</code> at the root or inside a single
+          top-level directory. The file's YAML frontmatter supplies the skill
+          <code>name</code> and <code>description</code>; everything after the closing
+          <code>---</code> becomes the body. Any sibling files under
+          <code>scripts/</code>, <code>references/</code>, or <code>assets/</code> are
+          imported as supporting files (subject to the same per-file / per-skill /
+          file-count limits as the file endpoints).
+        </p>
+      </template>
+      <template #response>
+        <p>
+          <code>200 OK</code> with the created skill object (same shape as
+          <code>POST /skills</code> returns).
+        </p>
+      </template>
+      <template #errors>
+        <ul class="dev-list">
+          <li><code>400</code> — archive too large, missing/duplicate <code>SKILL.md</code>, malformed frontmatter, or a supporting file violates path/size rules</li>
+          <li><code>404</code> — plugin not found</li>
+          <li><code>409</code> — a skill with that name already exists</li>
+        </ul>
+      </template>
+    </Endpoint>
+
+    <Endpoint
       method="PUT"
       path="/api/plugins/{name}/skills/{skill}"
       summary="Replace a skill's description and body."

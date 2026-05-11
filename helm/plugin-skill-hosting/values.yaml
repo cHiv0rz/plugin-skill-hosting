@@ -42,7 +42,7 @@ auth:
 backend:
   name: api
   image:
-    repository: registry.oglimmer.com/plugin-skill-hosting-backend
+    repository: ghcr.io/oglimmer/plugin-skill-hosting-backend
     pullPolicy: Always
     tag: "latest"
 
@@ -80,7 +80,7 @@ backend:
 frontend:
   name: web
   image:
-    repository: registry.oglimmer.com/plugin-skill-hosting-frontend
+    repository: ghcr.io/oglimmer/plugin-skill-hosting-frontend
     pullPolicy: Always
     tag: "latest"
 

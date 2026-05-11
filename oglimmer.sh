@@ -7,7 +7,7 @@ SCRIPT_NAME=$(basename "$0")
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Default configuration
-DEFAULT_REGISTRIES=("registry.oglimmer.com")
+DEFAULT_REGISTRIES=("ghcr.io/oglimmer")
 DEFAULT_FRONTEND_DEPLOYMENT="plugin-skill-hosting-frontend"
 DEFAULT_BACKEND_DEPLOYMENT="plugin-skill-hosting-backend"
 
@@ -679,19 +679,17 @@ execute_release() {
     log_info "Updating frontend version to $new_version..."
     (cd "$FRONTEND_DIR" && npm version "$new_version" --no-git-tag-version)
 
-    # Commit and tag release
+    # Commit, tag, and push — the tag push triggers the GitHub Actions release workflow
     log_info "Committing version changes and creating tag..."
     git add "$FRONTEND_DIR/package.json" "$FRONTEND_DIR/package-lock.json"
     git commit -m "Release v$new_version"
     git tag -a "v$new_version" -m "Release v$new_version"
 
-    # Build and upload after version commit
-    log_info "Building and uploading release version $new_version..."
-    BUILD_FRONTEND=true
-    BUILD_BACKEND=true
-    execute_build
+    log_info "Pushing commit and tag to origin..."
+    git push origin HEAD
+    git push origin "v$new_version"
 
-    log_success "Release v$new_version complete."
+    log_success "Release v$new_version tagged and pushed. GitHub Actions will build and publish the images."
 }
 
 # Main execution function

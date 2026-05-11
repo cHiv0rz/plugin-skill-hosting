@@ -160,13 +160,27 @@ Two product-level points worth knowing before you read the chart docs:
 
 ### Build and push images
 
-`oglimmer.sh` wraps the build/push/rollout cycle:
+Images live at `ghcr.io/oglimmer/plugin-skill-hosting-{backend,frontend}`.
+
+**Releasing a new version** — `oglimmer.sh release` bumps `frontend/package.json`, commits, creates an annotated git tag, and pushes both to `origin`. The tag push triggers the GitHub Actions `release` workflow (`.github/workflows/release.yml`), which builds multi-arch (`linux/amd64` + `linux/arm64`) images, pushes them to ghcr.io tagged as both `:v<version>` and `:latest`, and creates a GitHub Release with auto-generated notes.
+
+```bash
+./oglimmer.sh release            # interactive semver bump → tag → CI builds images
+./oglimmer.sh release --bump minor  # non-interactive
+```
+
+**Local builds** push `:latest` directly to ghcr.io and optionally restart the in-cluster deployments. Authenticate once with a GitHub PAT that has `write:packages` scope:
+
+```bash
+echo YOUR_PAT | docker login ghcr.io -u oglimmer --password-stdin
+```
+
+Then use `oglimmer.sh` as before:
 
 ```bash
 ./oglimmer.sh build              # build + push both images, restart both deployments
 ./oglimmer.sh build -b           # backend only
 ./oglimmer.sh build -f --no-push # frontend, local only
-./oglimmer.sh release            # bump version, tag, build, push
 ```
 
 Override the registry with `--registries my-registry.com` or `DEFAULT_REGISTRIES_ENV=...`.

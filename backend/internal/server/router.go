@@ -64,6 +64,7 @@ func NewRouter(app *App) http.Handler {
 			r.Get("/me", app.handleMe)
 			r.Post("/me/token/regenerate", app.handleRegenerateAPIToken)
 			r.Get("/me/deleted-plugins", app.handleListDeletedPlugins)
+			r.Get("/users", app.handleListUsers)
 			r.Get("/plugins", app.handleListPlugins)
 			r.Get("/plugins/{name}", app.handleGetPlugin)
 			r.Post("/plugins", app.handleCreatePlugin)

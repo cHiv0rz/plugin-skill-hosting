@@ -5,6 +5,13 @@ export interface User {
   apiToken?: string
 }
 
+export interface UserSummary {
+  id: string
+  username: string
+  email: string
+  createdAt: string
+}
+
 export interface Plugin {
   id: string
   ownerId: string

@@ -7,6 +7,7 @@ import type {
   SkillFileSummary,
   SkillVersion,
   User,
+  UserSummary,
   ValidationReport,
 } from './types'
 
@@ -54,6 +55,7 @@ export const api = {
   me: () => request<User>('/api/me'),
   regenerateToken: () =>
     request<{ apiToken: string }>('/api/me/token/regenerate', { method: 'POST' }),
+  listUsers: () => request<UserSummary[]>('/api/users'),
   listPlugins: () => request<Plugin[]>('/api/plugins'),
   getPlugin: (name: string) => request<Plugin>(`/api/plugins/${name}`),
   createPlugin: (data: Partial<Plugin>) =>

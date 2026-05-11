@@ -29,7 +29,9 @@ function logout() {
       <template v-if="auth.user">
         <RouterLink to="/">Plugins</RouterLink>
         <RouterLink to="/plugins/new" class="btn">+ New plugin</RouterLink>
-        <span class="user">{{ auth.user.username }}</span>
+        <RouterLink to="/users" class="user-link" :title="`Browse users — signed in as ${auth.user.username}`">
+          <span class="user-link-at" aria-hidden="true">@</span>{{ auth.user.username }}
+        </RouterLink>
         <button class="secondary" @click="logout">Log out</button>
       </template>
       <template v-else>

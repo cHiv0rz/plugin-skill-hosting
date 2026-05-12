@@ -38,11 +38,6 @@
       "automerge": false
     },
     {
-      "description": "Security updates should not wait for release age",
-      "isVulnerabilityAlert": true,
-      "minimumReleaseAge": "0 days"
-    },
-    {
       "matchManagers": [
         "npm"
       ],
@@ -77,6 +72,7 @@
     "schedule": [
       "at any time"
     ],
-    "automerge": true
+    "automerge": true,
+    "minimumReleaseAge": "0 days"
   }
 }

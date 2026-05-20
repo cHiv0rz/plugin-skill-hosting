@@ -61,6 +61,11 @@ backend:
     enabled: true
     exposeOnIngress: false
 
+  # Re-build all git repos from the database in a background goroutine on
+  # startup. Set to true when persistence.enabled=false (emptyDir / no PVC)
+  # so git repos survive without persistent storage.
+  rematerializeOnStartup: false
+
   # PVC holding the bare git repos and worktrees (DATA_DIR=/data)
   persistence:
     enabled: true
@@ -155,6 +160,9 @@ ingress:
           pathType: Exact
           backend: api
         - path: /healthz
+          pathType: Exact
+          backend: api
+        - path: /readyz
           pathType: Exact
           backend: api
         - path: /

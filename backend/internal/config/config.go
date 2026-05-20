@@ -38,6 +38,11 @@ type Config struct {
 	// MetricsToken, when non-empty, gates /metrics with Bearer auth. Default
 	// is open — relies on the public ingress not routing /metrics.
 	MetricsToken string
+
+	// RematerializeOnStartup, when true, re-builds all git repos from the
+	// database in a background goroutine after the server starts. Use this
+	// when the data dir is ephemeral (emptyDir / no PVC).
+	RematerializeOnStartup bool
 }
 
 // RequiresUserApproval reports whether new users must be approved by an
@@ -74,6 +79,8 @@ func Load() Config {
 		AnthropicModel:  getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
 
 		MetricsToken: getenv("METRICS_TOKEN", ""),
+
+		RematerializeOnStartup: os.Getenv("REMATERIALIZE_ON_STARTUP") == "true",
 	}
 	if c.AuthMode != "password" && c.AuthMode != "oidc" {
 		log.Fatalf("AUTH_MODE must be 'password' or 'oidc', got %q", c.AuthMode)

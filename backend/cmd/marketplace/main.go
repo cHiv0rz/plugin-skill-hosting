@@ -40,6 +40,12 @@ func main() {
 
 	app := &server.App{Cfg: cfg, DB: pool}
 
+	if cfg.RematerializeOnStartup {
+		go app.RematerializeAll(context.Background())
+	} else {
+		app.MarkReady()
+	}
+
 	if cfg.AuthMode == "oidc" {
 		if err := app.InitOIDC(context.Background()); err != nil {
 			log.Fatalf("oidc init: %v", err)

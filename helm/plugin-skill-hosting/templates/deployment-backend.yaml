@@ -100,6 +100,10 @@ spec:
               name: {{ include "psh.secretName" . }}
               key: OIDC_CLIENT_SECRET
         {{- end }}
+        {{- if .Values.backend.rematerializeOnStartup }}
+        - name: REMATERIALIZE_ON_STARTUP
+          value: "true"
+        {{- end }}
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:
@@ -138,7 +142,7 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /healthz
+            path: /readyz
             port: http
           periodSeconds: 5
           timeoutSeconds: 3

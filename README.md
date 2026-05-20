@@ -226,7 +226,8 @@ Public:
 - `POST /api/auth/login` `{email, password}` → `{token, user}` *(only when `AUTH_MODE=password`)*
 - `GET  /api/auth/oidc/login` → 302 to IdP *(only when `AUTH_MODE=oidc`)*
 - `GET  /api/auth/oidc/callback` → 302 to `${PUBLIC_BASE_URL}/auth/callback#token=…&user=…` *(only when `AUTH_MODE=oidc`)*
-- `GET  /healthz`
+- `GET  /healthz` — always `200 ok`; used by the liveness and startup probes
+- `GET  /readyz` — `200 ok` when ready, `503 Rematerializing` while startup re-materialization is in progress; used by the readiness probe
 
 Token-gated (Bearer JWT or API token; HTTP Basic with token as password is also accepted on the marketplace + git endpoints; Bearer-only on `/mcp`):
 

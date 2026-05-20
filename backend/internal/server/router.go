@@ -32,6 +32,14 @@ func NewRouter(app *App) http.Handler {
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
+	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if !app.IsReady() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("rematerializing"))
+			return
+		}
+		w.Write([]byte("ok"))
+	})
 
 	r.Method("GET", "/metrics", metrics.Handler(app.Cfg.MetricsToken))
 

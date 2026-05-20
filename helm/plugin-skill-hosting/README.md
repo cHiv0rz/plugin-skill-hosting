@@ -45,12 +45,12 @@ helm upgrade --install plugin-skill-hosting . \
 
 | Workload | Purpose |
 | --- | --- |
-| `Deployment` *backend* | Go API at `/api`, git smart-HTTP at `/git`, MCP server at `/mcp`, marketplace JSON, healthz |
+| `Deployment` *backend* | Go API at `/api`, git smart-HTTP at `/git`, MCP server at `/mcp`, marketplace JSON, `/healthz` (liveness), `/readyz` (readiness) |
 | `Deployment` *frontend* | nginx serving the Vue SPA |
 | `Deployment` *postgres* (optional) | Bundled Postgres 16 — set `postgres.enabled=false` to use an external DB |
 | `Service` × 3 | ClusterIP services for backend / frontend / postgres |
 | `Ingress` | Routes `/api`, `/git`, `/mcp`, `/marketplace.json`, `/healthz` → backend, `/` → frontend |
-| `PersistentVolumeClaim` × 2 | `/data` for bare git repos, Postgres data dir |
+| `PersistentVolumeClaim` × 0–2 | `/data` for bare git repos (omitted when `backend.persistence.enabled=false`), Postgres data dir |
 | `SealedSecret` | `JWT_SECRET`, `ANTHROPIC_API_KEY`, `OIDC_CLIENT_SECRET`, `POSTGRES_PASSWORD` (or `DATABASE_URL`) |
 | `ServiceAccount` | Pod identity for backend + frontend |
 | `ConfigMap` | nginx config for the frontend |
@@ -70,6 +70,41 @@ The minimum overrides for a real deployment:
 | `auth.mode` | `password` (default in chart `values.yaml` is `oidc`) — when `oidc`, fill `auth.oidc.*` and ship `OIDC_CLIENT_SECRET` in the sealed secret |
 
 Path order in `ingress.hosts[].paths` matters: backend prefixes (`/api`, `/git`, `/mcp`, `/marketplace.json`, `/healthz`) must precede the `/` catch-all. The defaults are correct — preserve order if you edit them.
+
+### Storage modes for git repos
+
+The backend writes bare git repos and working trees to `/data` (one directory per plugin). Two modes control how that directory is backed:
+
+**Mode 1 — Persistent (default, `backend.persistence.enabled: true`)**
+
+A `PersistentVolumeClaim` is mounted at `/data`. Repos survive pod restarts and upgrades with no extra work. Use this whenever your cluster provides `ReadWriteOnce` storage.
+
+```yaml
+backend:
+  persistence:
+    enabled: true
+    size: 5Gi          # tune to the number and size of your plugins
+  rematerializeOnStartup: false
+```
+
+**Mode 2 — Ephemeral (no PVC, `backend.persistence.enabled: false`)**
+
+`/data` is backed by an `emptyDir` volume — nothing survives a pod restart. To restore git access after a restart the backend re-builds every repo from Postgres at startup. Enable `rematerializeOnStartup` so this happens automatically:
+
+```yaml
+backend:
+  persistence:
+    enabled: false
+  rematerializeOnStartup: true
+```
+
+How startup works in this mode:
+
+1. The HTTP server starts listening immediately, so the **liveness probe** (`/healthz`) passes right away and Kubernetes never kills the pod during re-materialization.
+2. The **readiness probe** (`/readyz`) returns `503 Rematerializing` until every plugin repo has been rebuilt, then flips to `200 ok`. Kubernetes holds all traffic back until that point — no 404s on `/git/...` reach clients.
+3. Re-materialization time is proportional to the number of plugins and skills. For a small catalogue it typically completes in a few seconds.
+
+> **Note** — Postgres (or your external DB) is still the source of truth for all plugin and skill data. The only thing re-built from scratch is the on-disk git repos. No user data is at risk when `/data` is ephemeral.
 
 ### Sealed secret
 
@@ -109,7 +144,8 @@ Both PVCs (`-data` for git, Postgres data) survive `helm uninstall`. Snapshot th
 - **Non-root UID** — the backend container runs as UID 10001; `podSecurityContext.fsGroup: 10001` makes the `/data` PVC group-writable. If you change the image's user, update both.
 - **Git smart-HTTP** — needs `nginx.ingress.kubernetes.io/proxy-request-buffering: "off"` and a generous `proxy-body-size` for pushes. Already set.
 - **MCP transport** — the `/mcp` endpoint keeps a long-lived SSE stream open, so `proxy-buffering: "off"` and `proxy-read-timeout: 3600` / `proxy-send-timeout: 3600` are required to keep the stream from being reaped after the default 60 s. Already set.
-- **`replicaCount`** — leave at `1`. The backend writes to a single ReadWriteOnce PVC and force-pushes to bare git repos on disk; multi-replica needs RWX storage and is not currently supported.
+- **`replicaCount`** — leave at `1`. The backend force-pushes to bare git repos on disk; multi-replica would need RWX storage or an external git layer, neither of which is currently supported.
+- **Probes** — `/healthz` (liveness + startup) always returns `200` so Kubernetes never kills a pod during re-materialization. `/readyz` (readiness) returns `503` while `rematerializeOnStartup` is running and `200` once complete, so traffic is only routed when git repos are available.
 - **External Postgres** — set `postgres.enabled=false` and put `DATABASE_URL` in the sealed secret. The chart's `postgres.*` block is then ignored.
 
 ## Values
@@ -134,7 +170,8 @@ This table is hand-maintained against `values.yaml`. Update both when adding or 
 | `backend.image.pullPolicy` | string | `"Always"` | Backend image pull policy. |
 | `backend.service.type` | string | `"ClusterIP"` | Backend Service type. |
 | `backend.service.port` | int | `8080` | Backend Service port. |
-| `backend.persistence.enabled` | bool | `true` | Mount a PVC at `/data` for bare git repos and worktrees. |
+| `backend.rematerializeOnStartup` | bool | `false` | Re-build all git repos from Postgres in a background goroutine on startup. Set to `true` when `backend.persistence.enabled=false`. See [§Storage modes](#storage-modes-for-git-repos). |
+| `backend.persistence.enabled` | bool | `true` | Mount a PVC at `/data` for bare git repos and worktrees. Set to `false` (with `rematerializeOnStartup=true`) when no PVC is available. |
 | `backend.persistence.size` | string | `"5Gi"` | Backend PVC size. |
 | `backend.persistence.storageClass` | string | `""` | StorageClass for the backend PVC. Empty uses the cluster default. |
 | `backend.persistence.accessMode` | string | `"ReadWriteOnce"` | Backend PVC access mode. |

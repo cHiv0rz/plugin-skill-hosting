@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"sync/atomic"
 	"time"
 
 	"marketplace/internal/config"
@@ -17,7 +18,14 @@ type App struct {
 	Cfg  config.Config
 	DB   *sql.DB
 	OIDC *oidcRuntime // populated only when Cfg.AuthMode == "oidc"
+
+	// ready gates the readiness probe. False while REMATERIALIZE_ON_STARTUP is
+	// running; true otherwise. Use MarkReady/IsReady to access it.
+	ready atomic.Bool
 }
+
+func (a *App) MarkReady()    { a.ready.Store(true) }
+func (a *App) IsReady() bool { return a.ready.Load() }
 
 // User account status values. The status column has a CHECK constraint on
 // these exact strings — keep them in sync with migration 0008.

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -244,6 +245,26 @@ func buildSkillMarkdown(s Skill) string {
 	}
 	b.WriteString(body)
 	return b.String()
+}
+
+// RematerializeAll re-builds the git repo for every non-deleted plugin from
+// the database. It is intended to be called in a background goroutine on
+// startup when the data dir is ephemeral (REMATERIALIZE_ON_STARTUP=true).
+func (a *App) RematerializeAll(ctx context.Context) {
+	plugins, err := a.queryPlugins(ctx, `WHERE p.deleted_at IS NULL`)
+	if err != nil {
+		log.Printf("rematerialize: list plugins: %v", err)
+		return
+	}
+	log.Printf("rematerialize: rebuilding %d plugin repo(s)", len(plugins))
+	start := time.Now()
+	for i := range plugins {
+		if err := a.materializePlugin(ctx, &plugins[i]); err != nil {
+			log.Printf("rematerialize: plugin %q: %v", plugins[i].Name, err)
+		}
+	}
+	log.Printf("rematerialize: done in %s", time.Since(start).Round(time.Millisecond))
+	a.MarkReady()
 }
 
 func (a *App) gitHandler() http.Handler {

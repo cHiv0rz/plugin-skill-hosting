@@ -18,17 +18,35 @@ import (
 	"marketplace/internal/metrics"
 )
 
+// PluginManifestSchemaURL points at the SchemaStore manifest for the
+// claude-code plugin.json file. Embedded as "$schema" so editors can
+// validate and autocomplete the generated manifest.
+const PluginManifestSchemaURL = "https://json.schemastore.org/claude-code-plugin-manifest.json"
+
 type pluginManifest struct {
+	Schema      string             `json:"$schema,omitempty"`
 	Name        string             `json:"name"`
 	Description string             `json:"description,omitempty"`
 	Version     string             `json:"version,omitempty"`
 	Author      *marketplaceAuthor `json:"author,omitempty"`
 	Homepage    string             `json:"homepage,omitempty"`
 	License     string             `json:"license,omitempty"`
+	Repository  string             `json:"repository,omitempty"`
 }
 
 func (a *App) repoPath(name string) string {
 	return filepath.Join(a.Cfg.DataDir, "repos", name+".git")
+}
+
+// pluginRepoURL returns the public clone URL for a plugin's git repo,
+// without any embedded auth token. Used in generated plugin.json manifests
+// so the manifest stays user-agnostic and safe to commit.
+func (a *App) pluginRepoURL(name string) string {
+	base := strings.TrimRight(a.Cfg.PublicBaseURL, "/")
+	if base == "" {
+		return ""
+	}
+	return base + "/git/" + name + ".git"
 }
 
 func (a *App) workPath(name string) string {
@@ -122,11 +140,13 @@ func (a *App) materializePluginInner(ctx context.Context, p *Plugin) error {
 		return err
 	}
 	manifest := pluginManifest{
+		Schema:      PluginManifestSchemaURL,
 		Name:        p.Name,
 		Description: p.Description,
 		Version:     p.Version,
 		Homepage:    p.Homepage,
 		License:     p.License,
+		Repository:  a.pluginRepoURL(p.Name),
 	}
 	if p.AuthorName != "" || p.AuthorEmail != "" {
 		manifest.Author = &marketplaceAuthor{Name: p.AuthorName, Email: p.AuthorEmail}
@@ -235,6 +255,10 @@ func buildSkillMarkdown(s Skill) string {
 	b.WriteString("name: " + s.Name + "\n")
 	desc := strings.ReplaceAll(s.Description, "\n", " ")
 	b.WriteString("description: " + desc + "\n")
+	if extra := strings.TrimSpace(s.ExtraFrontmatter); extra != "" {
+		b.WriteString(extra)
+		b.WriteString("\n")
+	}
 	b.WriteString("---\n\n")
 	body := s.Body
 	if body == "" {

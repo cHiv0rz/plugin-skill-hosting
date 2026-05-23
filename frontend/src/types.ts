@@ -44,6 +44,7 @@ export interface Skill {
   name: string
   description: string
   body: string
+  extraFrontmatter: string
   createdAt: string
   updatedAt: string
   createdBy?: string
@@ -63,6 +64,7 @@ export interface SkillVersion {
   name: string
   description: string
   body: string
+  extraFrontmatter: string
   editedBy?: string
   editedByName?: string
   editedAt: string

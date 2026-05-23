@@ -336,7 +336,7 @@ func (a *App) handleUpsertSkillFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.recordSkillVersion(r.Context(), a.DB, s.ID, "update", s.Name, s.Description, s.Body, user.ID); err != nil {
+	if err := a.recordSkillVersion(r.Context(), a.DB, s.ID, "update", s.Name, s.Description, s.Body, s.ExtraFrontmatter, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -385,7 +385,7 @@ func (a *App) handleDeleteSkillFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.recordSkillVersion(r.Context(), a.DB, s.ID, "update", s.Name, s.Description, s.Body, user.ID); err != nil {
+	if err := a.recordSkillVersion(r.Context(), a.DB, s.ID, "update", s.Name, s.Description, s.Body, s.ExtraFrontmatter, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}

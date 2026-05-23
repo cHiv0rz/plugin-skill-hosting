@@ -9,25 +9,28 @@ import (
 
 func TestParseSkillFrontmatter_Basic(t *testing.T) {
 	in := []byte("---\nname: my-skill\ndescription: does things\n---\n\nbody text\n")
-	name, desc, body, err := parseSkillFrontmatter(in)
+	name, desc, extra, body, err := parseSkillFrontmatter(in)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	if name != "my-skill" || desc != "does things" || body != "body text\n" {
 		t.Errorf("got name=%q desc=%q body=%q", name, desc, body)
 	}
+	if extra != "" {
+		t.Errorf("expected no extras, got %q", extra)
+	}
 }
 
 func TestParseSkillFrontmatter_LeadingBlankLines(t *testing.T) {
 	in := []byte("\n\n---\nname: x\ndescription: y\n---\nthe body\n")
-	if _, _, body, err := parseSkillFrontmatter(in); err != nil || body != "the body\n" {
+	if _, _, _, body, err := parseSkillFrontmatter(in); err != nil || body != "the body\n" {
 		t.Errorf("got body=%q err=%v", body, err)
 	}
 }
 
 func TestParseSkillFrontmatter_QuotedValues(t *testing.T) {
 	in := []byte("---\nname: \"quoted-name\"\ndescription: 'quoted desc'\n---\nbody\n")
-	name, desc, _, err := parseSkillFrontmatter(in)
+	name, desc, _, _, err := parseSkillFrontmatter(in)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -38,28 +41,28 @@ func TestParseSkillFrontmatter_QuotedValues(t *testing.T) {
 
 func TestParseSkillFrontmatter_MissingDelimiter(t *testing.T) {
 	in := []byte("no frontmatter at all\n")
-	if _, _, _, err := parseSkillFrontmatter(in); err == nil {
+	if _, _, _, _, err := parseSkillFrontmatter(in); err == nil {
 		t.Error("expected error for missing frontmatter")
 	}
 }
 
 func TestParseSkillFrontmatter_UnterminatedFrontmatter(t *testing.T) {
 	in := []byte("---\nname: a\ndescription: b\n")
-	if _, _, _, err := parseSkillFrontmatter(in); err == nil {
+	if _, _, _, _, err := parseSkillFrontmatter(in); err == nil {
 		t.Error("expected error for unterminated frontmatter")
 	}
 }
 
 func TestParseSkillFrontmatter_MissingName(t *testing.T) {
 	in := []byte("---\ndescription: only a desc\n---\nbody\n")
-	if _, _, _, err := parseSkillFrontmatter(in); err == nil {
+	if _, _, _, _, err := parseSkillFrontmatter(in); err == nil {
 		t.Error("expected error for missing name")
 	}
 }
 
 func TestParseSkillFrontmatter_FoldedDescription(t *testing.T) {
 	in := []byte("---\nname: plan-driven-dev\ndescription: >\n  Drive iterative, test-first implementation from a project_plan.md file.\n  Use this skill whenever the user asks.\n---\n\nbody\n")
-	_, desc, body, err := parseSkillFrontmatter(in)
+	_, desc, _, body, err := parseSkillFrontmatter(in)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -74,7 +77,7 @@ func TestParseSkillFrontmatter_FoldedDescription(t *testing.T) {
 
 func TestParseSkillFrontmatter_FoldedDescriptionWithParagraphBreak(t *testing.T) {
 	in := []byte("---\nname: x\ndescription: >\n  First paragraph here.\n\n  Second paragraph here.\n---\nbody\n")
-	_, desc, _, err := parseSkillFrontmatter(in)
+	_, desc, _, _, err := parseSkillFrontmatter(in)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -86,7 +89,7 @@ func TestParseSkillFrontmatter_FoldedDescriptionWithParagraphBreak(t *testing.T)
 
 func TestParseSkillFrontmatter_LiteralDescription(t *testing.T) {
 	in := []byte("---\nname: x\ndescription: |\n  Line one\n  Line two\n---\nbody\n")
-	_, desc, _, err := parseSkillFrontmatter(in)
+	_, desc, _, _, err := parseSkillFrontmatter(in)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -98,7 +101,7 @@ func TestParseSkillFrontmatter_LiteralDescription(t *testing.T) {
 
 func TestParseSkillFrontmatter_FoldedKeyStopsAtNextKey(t *testing.T) {
 	in := []byte("---\ndescription: >\n  multi-line\n  description here\nname: my-skill\n---\nbody\n")
-	name, desc, _, err := parseSkillFrontmatter(in)
+	name, desc, _, _, err := parseSkillFrontmatter(in)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -112,8 +115,40 @@ func TestParseSkillFrontmatter_FoldedKeyStopsAtNextKey(t *testing.T) {
 
 func TestParseSkillFrontmatter_MissingDescription(t *testing.T) {
 	in := []byte("---\nname: only-a-name\n---\nbody\n")
-	if _, _, _, err := parseSkillFrontmatter(in); err == nil {
+	if _, _, _, _, err := parseSkillFrontmatter(in); err == nil {
 		t.Error("expected error for missing description")
+	}
+}
+
+func TestParseSkillFrontmatter_PreservesExtras(t *testing.T) {
+	in := []byte("---\nname: ext\ndescription: d\nallowed-tools:\n  - Read\n  - Edit\nlicense: MIT\n---\nbody\n")
+	name, desc, extra, body, err := parseSkillFrontmatter(in)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if name != "ext" || desc != "d" || body != "body\n" {
+		t.Errorf("name/desc/body wrong: name=%q desc=%q body=%q", name, desc, body)
+	}
+	want := "allowed-tools:\n  - Read\n  - Edit\nlicense: MIT"
+	if extra != want {
+		t.Errorf("extra mismatch:\n got: %q\nwant: %q", extra, want)
+	}
+}
+
+func TestParseSkillFrontmatter_ExtrasWithFoldedDescription(t *testing.T) {
+	// description uses folded scalar; its indented continuations must NOT
+	// leak into extras.
+	in := []byte("---\nname: x\ndescription: >\n  multi line desc\n  continues here\nallowed-tools:\n  - Read\n---\nbody\n")
+	_, desc, extra, _, err := parseSkillFrontmatter(in)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if desc != "multi line desc continues here" {
+		t.Errorf("desc = %q", desc)
+	}
+	want := "allowed-tools:\n  - Read"
+	if extra != want {
+		t.Errorf("extra = %q, want %q", extra, want)
 	}
 }
 

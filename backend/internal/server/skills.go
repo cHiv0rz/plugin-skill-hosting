@@ -15,15 +15,17 @@ import (
 )
 
 type skillReq struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Body        string `json:"body"`
+	Name             string  `json:"name"`
+	Description      string  `json:"description"`
+	Body             string  `json:"body"`
+	ExtraFrontmatter *string `json:"extraFrontmatter,omitempty"`
 }
 
 // loadSkillsForPlugin returns active (non-soft-deleted) skills with audit metadata.
 func (a *App) loadSkillsForPlugin(ctx context.Context, pluginID string) ([]Skill, error) {
 	return a.querySkills(ctx, `
-		SELECT s.id, s.plugin_id, s.name, s.description, s.body, s.created_at, s.updated_at,
+		SELECT s.id, s.plugin_id, s.name, s.description, s.body, s.extra_frontmatter,
+		       s.created_at, s.updated_at,
 		       s.created_by, cu.username,
 		       s.updated_by, uu.username,
 		       s.deleted_at, s.deleted_by, du.username
@@ -39,7 +41,8 @@ func (a *App) loadSkillsForPlugin(ctx context.Context, pluginID string) ([]Skill
 // loadDeletedSkillsForPlugin returns soft-deleted skills, used by the restore UI.
 func (a *App) loadDeletedSkillsForPlugin(ctx context.Context, pluginID string) ([]Skill, error) {
 	return a.querySkills(ctx, `
-		SELECT s.id, s.plugin_id, s.name, s.description, s.body, s.created_at, s.updated_at,
+		SELECT s.id, s.plugin_id, s.name, s.description, s.body, s.extra_frontmatter,
+		       s.created_at, s.updated_at,
 		       s.created_by, cu.username,
 		       s.updated_by, uu.username,
 		       s.deleted_at, s.deleted_by, du.username
@@ -64,7 +67,8 @@ func (a *App) querySkills(ctx context.Context, query string, args ...interface{}
 		var createdBy, updatedBy, deletedBy sql.NullString
 		var createdByName, updatedByName, deletedByName sql.NullString
 		var deletedAt sql.NullTime
-		if err := rows.Scan(&s.ID, &s.PluginID, &s.Name, &s.Description, &s.Body, &s.CreatedAt, &s.UpdatedAt,
+		if err := rows.Scan(&s.ID, &s.PluginID, &s.Name, &s.Description, &s.Body, &s.ExtraFrontmatter,
+			&s.CreatedAt, &s.UpdatedAt,
 			&createdBy, &createdByName,
 			&updatedBy, &updatedByName,
 			&deletedAt, &deletedBy, &deletedByName); err != nil {
@@ -106,7 +110,8 @@ func (a *App) querySkills(ctx context.Context, query string, args ...interface{}
 // loadActiveSkill fetches a single non-deleted skill by (plugin, name).
 func (a *App) loadActiveSkill(ctx context.Context, pluginID, name string) (*Skill, error) {
 	skills, err := a.querySkills(ctx, `
-		SELECT s.id, s.plugin_id, s.name, s.description, s.body, s.created_at, s.updated_at,
+		SELECT s.id, s.plugin_id, s.name, s.description, s.body, s.extra_frontmatter,
+		       s.created_at, s.updated_at,
 		       s.created_by, cu.username,
 		       s.updated_by, uu.username,
 		       s.deleted_at, s.deleted_by, du.username
@@ -128,7 +133,8 @@ func (a *App) loadActiveSkill(ctx context.Context, pluginID, name string) (*Skil
 // loadSkillByID fetches a skill regardless of deletion state.
 func (a *App) loadSkillByID(ctx context.Context, id string) (*Skill, error) {
 	skills, err := a.querySkills(ctx, `
-		SELECT s.id, s.plugin_id, s.name, s.description, s.body, s.created_at, s.updated_at,
+		SELECT s.id, s.plugin_id, s.name, s.description, s.body, s.extra_frontmatter,
+		       s.created_at, s.updated_at,
 		       s.created_by, cu.username,
 		       s.updated_by, uu.username,
 		       s.deleted_at, s.deleted_by, du.username
@@ -151,7 +157,7 @@ func (a *App) loadSkillByID(ctx context.Context, id string) (*Skill, error) {
 // auto-incrementing the per-skill version number, and snapshots the current
 // skill_files tree into skill_file_versions so revert can restore both halves
 // of the skill (description+body and supporting files) atomically.
-func (a *App) recordSkillVersion(ctx context.Context, tx db.Exec, skillID, action, name, description, body string, editedBy string) error {
+func (a *App) recordSkillVersion(ctx context.Context, tx db.Exec, skillID, action, name, description, body, extraFrontmatter string, editedBy string) error {
 	var nextVersion int
 	if err := tx.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(version), 0) + 1 FROM skill_versions WHERE skill_id = $1`, skillID).
@@ -160,9 +166,9 @@ func (a *App) recordSkillVersion(ctx context.Context, tx db.Exec, skillID, actio
 	}
 	var versionID string
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO skill_versions (skill_id, version, action, name, description, body, edited_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
-	`, skillID, nextVersion, action, name, description, body, editedBy).Scan(&versionID); err != nil {
+		INSERT INTO skill_versions (skill_id, version, action, name, description, body, extra_frontmatter, edited_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+	`, skillID, nextVersion, action, name, description, body, extraFrontmatter, editedBy).Scan(&versionID); err != nil {
 		return err
 	}
 	return snapshotSkillFiles(ctx, tx, versionID, skillID)
@@ -221,16 +227,20 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	extra := ""
+	if req.ExtraFrontmatter != nil {
+		extra = *req.ExtraFrontmatter
+	}
 	var id string
 	err = a.DB.QueryRowContext(r.Context(), `
-		INSERT INTO skills (plugin_id, name, description, body, created_by, updated_by)
-		VALUES ($1, $2, $3, $4, $5, $5) RETURNING id
-	`, p.ID, req.Name, req.Description, req.Body, user.ID).Scan(&id)
+		INSERT INTO skills (plugin_id, name, description, body, extra_frontmatter, created_by, updated_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING id
+	`, p.ID, req.Name, req.Description, req.Body, extra, user.ID).Scan(&id)
 	if err != nil {
 		respondDBOrConflict(w, err, "skill with that name already exists")
 		return
 	}
-	if err := a.recordSkillVersion(r.Context(), a.DB, id, "create", req.Name, req.Description, req.Body, user.ID); err != nil {
+	if err := a.recordSkillVersion(r.Context(), a.DB, id, "create", req.Name, req.Description, req.Body, extra, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -280,14 +290,22 @@ func (a *App) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Omitting extraFrontmatter from the payload preserves the existing value;
+	// explicitly sending "" clears it.
+	extra := existing.ExtraFrontmatter
+	if req.ExtraFrontmatter != nil {
+		extra = *req.ExtraFrontmatter
+	}
+
 	if _, err := a.DB.ExecContext(r.Context(), `
-		UPDATE skills SET description = $1, body = $2, updated_at = now(), updated_by = $3
-		WHERE id = $4
-	`, req.Description, req.Body, user.ID, existing.ID); err != nil {
+		UPDATE skills SET description = $1, body = $2, extra_frontmatter = $3,
+		                  updated_at = now(), updated_by = $4
+		WHERE id = $5
+	`, req.Description, req.Body, extra, user.ID, existing.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	if err := a.recordSkillVersion(r.Context(), a.DB, existing.ID, "update", existing.Name, req.Description, req.Body, user.ID); err != nil {
+	if err := a.recordSkillVersion(r.Context(), a.DB, existing.ID, "update", existing.Name, req.Description, req.Body, extra, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -322,7 +340,7 @@ func (a *App) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	if err := a.recordSkillVersion(r.Context(), a.DB, existing.ID, "delete", existing.Name, existing.Description, existing.Body, user.ID); err != nil {
+	if err := a.recordSkillVersion(r.Context(), a.DB, existing.ID, "delete", existing.Name, existing.Description, existing.Body, existing.ExtraFrontmatter, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -353,15 +371,16 @@ func (a *App) handleListDeletedSkills(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, skills)
 }
 
-// findLatestDeletedSkill returns the id/description/body of the most recently
-// soft-deleted skill with this name in the plugin. The "most recent" filter
-// matters because the same name can be deleted multiple times across history.
-func (a *App) findLatestDeletedSkill(ctx context.Context, pluginID, name string) (skillID, desc, body string, err error) {
+// findLatestDeletedSkill returns the id/description/body/extra of the most
+// recently soft-deleted skill with this name in the plugin. The "most recent"
+// filter matters because the same name can be deleted multiple times across
+// history.
+func (a *App) findLatestDeletedSkill(ctx context.Context, pluginID, name string) (skillID, desc, body, extra string, err error) {
 	err = a.DB.QueryRowContext(ctx, `
-		SELECT id, description, body FROM skills
+		SELECT id, description, body, extra_frontmatter FROM skills
 		WHERE plugin_id = $1 AND name = $2 AND deleted_at IS NOT NULL
 		ORDER BY deleted_at DESC LIMIT 1
-	`, pluginID, name).Scan(&skillID, &desc, &body)
+	`, pluginID, name).Scan(&skillID, &desc, &body, &extra)
 	return
 }
 
@@ -375,7 +394,7 @@ func (a *App) handleRestoreSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	skillName := chi.URLParam(r, "skill")
 
-	skillID, desc, body, err := a.findLatestDeletedSkill(r.Context(), p.ID, skillName)
+	skillID, desc, body, extra, err := a.findLatestDeletedSkill(r.Context(), p.ID, skillName)
 	if err == sql.ErrNoRows {
 		writeErr(w, http.StatusNotFound, "no deleted skill with that name")
 		return
@@ -392,7 +411,7 @@ func (a *App) handleRestoreSkill(w http.ResponseWriter, r *http.Request) {
 		respondDBOrConflict(w, err, "an active skill with that name already exists")
 		return
 	}
-	if err := a.recordSkillVersion(r.Context(), a.DB, skillID, "restore", skillName, desc, body, user.ID); err != nil {
+	if err := a.recordSkillVersion(r.Context(), a.DB, skillID, "restore", skillName, desc, body, extra, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -444,7 +463,7 @@ func (a *App) handleListSkillVersions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := a.DB.QueryContext(r.Context(), `
-		SELECT v.id, v.skill_id, v.version, v.action, v.name, v.description, v.body,
+		SELECT v.id, v.skill_id, v.version, v.action, v.name, v.description, v.body, v.extra_frontmatter,
 		       v.edited_by, u.username, v.edited_at
 		FROM skill_versions v
 		LEFT JOIN users u ON u.id = v.edited_by
@@ -460,7 +479,7 @@ func (a *App) handleListSkillVersions(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var v SkillVersion
 		var editedBy, editedByName sql.NullString
-		if err := rows.Scan(&v.ID, &v.SkillID, &v.Version, &v.Action, &v.Name, &v.Description, &v.Body,
+		if err := rows.Scan(&v.ID, &v.SkillID, &v.Version, &v.Action, &v.Name, &v.Description, &v.Body, &v.ExtraFrontmatter,
 			&editedBy, &editedByName, &v.EditedAt); err != nil {
 			writeErr(w, http.StatusInternalServerError, "scan error")
 			return
@@ -483,14 +502,14 @@ func (a *App) handleListSkillVersions(w http.ResponseWriter, r *http.Request) {
 // deleted) and content-rollback in one operation, and writes a new version row
 // of action=revert.
 //
-// loadSkillVersionSnapshot fetches the row id, description, and body of a
-// specific skill_versions entry. The id is used to look up the paired
-// skill_file_versions snapshot when reverting.
-func (a *App) loadSkillVersionSnapshot(ctx context.Context, skillID, version string) (versionID, desc, body string, err error) {
+// loadSkillVersionSnapshot fetches the row id, description, body, and extra
+// frontmatter of a specific skill_versions entry. The id is used to look up
+// the paired skill_file_versions snapshot when reverting.
+func (a *App) loadSkillVersionSnapshot(ctx context.Context, skillID, version string) (versionID, desc, body, extra string, err error) {
 	err = a.DB.QueryRowContext(ctx, `
-		SELECT id, description, body FROM skill_versions
+		SELECT id, description, body, extra_frontmatter FROM skill_versions
 		WHERE skill_id = $1 AND version = $2
-	`, skillID, version).Scan(&versionID, &desc, &body)
+	`, skillID, version).Scan(&versionID, &desc, &body, &extra)
 	return
 }
 
@@ -513,7 +532,7 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetVersionID, targetDesc, targetBody, err := a.loadSkillVersionSnapshot(r.Context(), skillID, versionStr)
+	targetVersionID, targetDesc, targetBody, targetExtra, err := a.loadSkillVersionSnapshot(r.Context(), skillID, versionStr)
 	if err == sql.ErrNoRows {
 		writeErr(w, http.StatusNotFound, "version not found")
 		return
@@ -531,10 +550,11 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := a.DB.ExecContext(r.Context(), `
-		UPDATE skills SET description = $1, body = $2, updated_at = now(), updated_by = $3,
+		UPDATE skills SET description = $1, body = $2, extra_frontmatter = $3,
+		                  updated_at = now(), updated_by = $4,
 		                  deleted_at = NULL, deleted_by = NULL
-		WHERE id = $4
-	`, targetDesc, targetBody, user.ID, skillID); err != nil {
+		WHERE id = $5
+	`, targetDesc, targetBody, targetExtra, user.ID, skillID); err != nil {
 		respondDBOrConflict(w, err, "an active skill with that name already exists")
 		return
 	}
@@ -544,7 +564,7 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	if err := a.recordSkillVersion(r.Context(), a.DB, skillID, "revert", skillName, targetDesc, targetBody, user.ID); err != nil {
+	if err := a.recordSkillVersion(r.Context(), a.DB, skillID, "revert", skillName, targetDesc, targetBody, targetExtra, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}

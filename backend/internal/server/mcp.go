@@ -362,7 +362,7 @@ func (a *App) addToolCreateSkill(s *mcp.Server) {
 			}
 			return nil, zero, fmt.Errorf("db error: %w", err)
 		}
-		if err := a.recordSkillVersion(ctx, a.DB, id, "create", name, in.Description, in.Body, user.ID); err != nil {
+		if err := a.recordSkillVersion(ctx, a.DB, id, "create", name, in.Description, in.Body, "", user.ID); err != nil {
 			return nil, zero, fmt.Errorf("db error: %w", err)
 		}
 		if priorSkillCount == 0 {
@@ -410,7 +410,7 @@ func (a *App) addToolUpdateSkill(s *mcp.Server) {
 		`, in.Description, in.Body, user.ID, existing.ID); err != nil {
 			return nil, zero, fmt.Errorf("db error: %w", err)
 		}
-		if err := a.recordSkillVersion(ctx, a.DB, existing.ID, "update", existing.Name, in.Description, in.Body, user.ID); err != nil {
+		if err := a.recordSkillVersion(ctx, a.DB, existing.ID, "update", existing.Name, in.Description, in.Body, existing.ExtraFrontmatter, user.ID); err != nil {
 			return nil, zero, fmt.Errorf("db error: %w", err)
 		}
 		if err := a.bumpAndPersistPluginVersion(ctx, p, semver.BumpKindForSizeChange(len(existing.Body), len(in.Body))); err != nil {
@@ -571,7 +571,7 @@ func (a *App) addToolUpsertSkillFile(s *mcp.Server) {
 		`, sk.ID, pth, contentText, contentBlob, isBinary, len(data)); err != nil {
 			return nil, zero, fmt.Errorf("db error: %w", err)
 		}
-		if err := a.recordSkillVersion(ctx, a.DB, sk.ID, "update", sk.Name, sk.Description, sk.Body, user.ID); err != nil {
+		if err := a.recordSkillVersion(ctx, a.DB, sk.ID, "update", sk.Name, sk.Description, sk.Body, sk.ExtraFrontmatter, user.ID); err != nil {
 			return nil, zero, fmt.Errorf("db error: %w", err)
 		}
 		if err := a.bumpAndPersistPluginVersion(ctx, p, semver.BumpPatch); err != nil {

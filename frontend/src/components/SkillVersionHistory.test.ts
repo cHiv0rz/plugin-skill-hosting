@@ -28,6 +28,7 @@ function v(overrides: Partial<{
     name: 'my-skill',
     description: overrides.description ?? 'initial',
     body: '',
+    extraFrontmatter: '',
     editedByName: overrides.editedByName ?? 'alice',
     editedAt: overrides.editedAt ?? '2026-01-01T12:00:00Z',
   }

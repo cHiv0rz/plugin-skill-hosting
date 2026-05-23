@@ -24,6 +24,7 @@ type marketplacePlugin struct {
 	Author      *marketplaceAuthor `json:"author,omitempty"`
 	Homepage    string             `json:"homepage,omitempty"`
 	License     string             `json:"license,omitempty"`
+	Repository  string             `json:"repository,omitempty"`
 	Source      marketplaceSource  `json:"source"`
 }
 
@@ -33,7 +34,13 @@ type marketplaceOwner struct {
 	URL   string `json:"url,omitempty"`
 }
 
+// MarketplaceSchemaURL points at the SchemaStore manifest for the
+// claude-code marketplace catalog. Embedded as "$schema" so editors can
+// validate and autocomplete the served document.
+const MarketplaceSchemaURL = "https://json.schemastore.org/claude-code-marketplace.json"
+
 type marketplaceDoc struct {
+	Schema  string              `json:"$schema,omitempty"`
 	Name    string              `json:"name"`
 	Owner   marketplaceOwner    `json:"owner"`
 	Plugins []marketplacePlugin `json:"plugins"`
@@ -59,7 +66,8 @@ func (a *App) handleMarketplaceJSON(w http.ResponseWriter, r *http.Request) {
 		name = "oglimmer-marketplace"
 	}
 	doc := marketplaceDoc{
-		Name: name,
+		Schema: MarketplaceSchemaURL,
+		Name:   name,
 		Owner: marketplaceOwner{
 			Name: name,
 			URL:  base,
@@ -73,15 +81,17 @@ func (a *App) handleMarketplaceJSON(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "scan error")
 			return
 		}
+		repoURL := authedBase + "/git/" + name + ".git"
 		mp := marketplacePlugin{
 			Name:        name,
 			Description: desc,
 			Version:     ver,
 			Homepage:    hp,
 			License:     lic,
+			Repository:  repoURL,
 			Source: marketplaceSource{
 				Source: "url",
-				URL:    authedBase + "/git/" + name + ".git",
+				URL:    repoURL,
 			},
 		}
 		if an != "" || ae != "" {

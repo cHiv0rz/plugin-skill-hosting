@@ -1,6 +1,35 @@
 package server
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestMarketplaceDoc_EmbedsSchemaAndRepository(t *testing.T) {
+	doc := marketplaceDoc{
+		Schema: MarketplaceSchemaURL,
+		Name:   "m",
+		Owner:  marketplaceOwner{Name: "m"},
+		Plugins: []marketplacePlugin{{
+			Name:        "p",
+			Description: "d",
+			Repository:  "https://example.com/git/p.git",
+			Source:      marketplaceSource{Source: "url", URL: "https://example.com/git/p.git"},
+		}},
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := string(out)
+	if !strings.Contains(body, `"$schema":"https://json.schemastore.org/claude-code-marketplace.json"`) {
+		t.Errorf("missing $schema in marketplace JSON: %s", body)
+	}
+	if !strings.Contains(body, `"repository":"https://example.com/git/p.git"`) {
+		t.Errorf("missing per-plugin repository in marketplace JSON: %s", body)
+	}
+}
 
 func TestEmbedTokenInBase(t *testing.T) {
 	cases := []struct {

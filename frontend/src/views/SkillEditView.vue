@@ -29,6 +29,7 @@ const isEdit = computed(() => !!props.skillName)
 const name = ref('')
 const description = ref('')
 const body = ref(defaultBody())
+const extraFrontmatter = ref('')
 const error = ref('')
 const loading = ref(false)
 const importing = ref(false)
@@ -133,6 +134,7 @@ async function load() {
     name.value = s.name
     description.value = s.description
     body.value = s.body
+    extraFrontmatter.value = s.extraFrontmatter ?? ''
     audit.value = {
       createdByName: s.createdByName,
       createdAt: s.createdAt,
@@ -174,12 +176,14 @@ async function submit() {
       await api.updateSkill(props.pluginName, props.skillName!, {
         description: description.value,
         body: body.value,
+        extraFrontmatter: extraFrontmatter.value,
       })
     } else {
       await api.createSkill(props.pluginName, {
         name: name.value,
         description: description.value,
         body: body.value,
+        extraFrontmatter: extraFrontmatter.value,
       })
     }
     router.push(`/plugins/${props.pluginName}`)
@@ -220,6 +224,7 @@ async function revert(version: number) {
     const s = await api.revertSkill(props.pluginName, props.skillName, version)
     description.value = s.description
     body.value = s.body
+    extraFrontmatter.value = s.extraFrontmatter ?? ''
     audit.value = {
       createdByName: s.createdByName,
       createdAt: s.createdAt,
@@ -276,6 +281,23 @@ watch(() => props.skillName, load)
 
       <label>Description (used by Claude to decide when to use this skill)</label>
       <textarea v-model="description" required rows="6" class="description-textarea" />
+
+      <details class="extra-frontmatter" :open="!!extraFrontmatter">
+        <summary>Extra YAML frontmatter (advanced)</summary>
+        <p class="muted extra-frontmatter-hint">
+          Optional YAML lines emitted into <code>SKILL.md</code> between
+          <code>name/description</code> and the closing <code>---</code>.
+          Use this for keys like <code>allowed-tools</code>, <code>license</code>,
+          or other metadata Claude Code recognises.
+        </p>
+        <textarea
+          v-model="extraFrontmatter"
+          rows="4"
+          class="extra-frontmatter-textarea"
+          spellcheck="false"
+          placeholder="allowed-tools:&#10;  - Read&#10;  - Edit"
+        />
+      </details>
 
       <label>Body (Markdown — becomes the contents of SKILL.md after the frontmatter)</label>
       <MarkdownEditor v-model="body" />
@@ -359,6 +381,22 @@ watch(() => props.skillName, load)
 
         <label>Description (used by Claude to decide when to use this skill)</label>
         <textarea v-model="description" required rows="6" class="description-textarea" />
+
+        <details class="extra-frontmatter" :open="!!extraFrontmatter">
+          <summary>Extra YAML frontmatter (advanced)</summary>
+          <p class="muted extra-frontmatter-hint">
+            Optional YAML lines emitted into <code>SKILL.md</code> between
+            <code>name/description</code> and the closing <code>---</code>.
+            Imported skills preserve these verbatim.
+          </p>
+          <textarea
+            v-model="extraFrontmatter"
+            rows="4"
+            class="extra-frontmatter-textarea"
+            spellcheck="false"
+            placeholder="allowed-tools:&#10;  - Read&#10;  - Edit"
+          />
+        </details>
 
         <label>Body (Markdown — becomes the contents of SKILL.md after the frontmatter)</label>
         <MarkdownEditor v-model="body" />
@@ -569,6 +607,36 @@ watch(() => props.skillName, load)
 .description-textarea {
   min-height: 0;
   resize: vertical;
+}
+.extra-frontmatter {
+  margin: 0 0 16px;
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+.extra-frontmatter > summary {
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+.extra-frontmatter[open] > summary {
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.extra-frontmatter-hint {
+  margin: 4px 0 8px;
+  font-size: 12px;
+}
+.extra-frontmatter-textarea {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  min-height: 0;
+  resize: vertical;
+  white-space: pre;
 }
 .tabs {
   display: flex;

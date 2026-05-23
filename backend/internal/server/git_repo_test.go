@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,6 +52,37 @@ func TestBuildSkillMarkdown_BodyWithoutTrailingNewline(t *testing.T) {
 	}
 }
 
+func TestBuildSkillMarkdown_EmitsExtraFrontmatter(t *testing.T) {
+	s := Skill{
+		Name:             "ext",
+		Description:      "d",
+		ExtraFrontmatter: "allowed-tools:\n  - Read\n  - Edit\nlicense: MIT",
+		Body:             "body",
+	}
+	out := buildSkillMarkdown(s)
+	want := "---\nname: ext\ndescription: d\nallowed-tools:\n  - Read\n  - Edit\nlicense: MIT\n---\n\nbody\n"
+	if out != want {
+		t.Errorf("buildSkillMarkdown =\n%q\nwant=\n%q", out, want)
+	}
+}
+
+func TestBuildSkillMarkdown_RoundTripWithExtras(t *testing.T) {
+	original := Skill{
+		Name:             "rt",
+		Description:      "round trip",
+		ExtraFrontmatter: "allowed-tools:\n  - Read",
+		Body:             "the body\n",
+	}
+	out := buildSkillMarkdown(original)
+	name, desc, extra, body, err := parseSkillFrontmatter([]byte(out))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if name != original.Name || desc != original.Description || extra != original.ExtraFrontmatter || body != original.Body {
+		t.Errorf("round-trip mismatch: name=%q desc=%q extra=%q body=%q", name, desc, extra, body)
+	}
+}
+
 func TestRepoAndWorkPaths(t *testing.T) {
 	a := &App{Cfg: config.Config{DataDir: "/var/data"}}
 	if got := a.repoPath("foo"); got != "/var/data/repos/foo.git" {
@@ -58,6 +90,42 @@ func TestRepoAndWorkPaths(t *testing.T) {
 	}
 	if got := a.workPath("foo"); got != "/var/data/work/foo" {
 		t.Errorf("workPath = %q", got)
+	}
+}
+
+func TestPluginRepoURL(t *testing.T) {
+	cases := []struct {
+		base, name, want string
+	}{
+		{"https://example.com", "foo", "https://example.com/git/foo.git"},
+		{"https://example.com/", "foo", "https://example.com/git/foo.git"}, // trailing slash trimmed
+		{"https://example.com/p/", "bar", "https://example.com/p/git/bar.git"},
+		{"", "foo", ""}, // no base => empty (avoids emitting just "/git/foo.git")
+	}
+	for _, c := range cases {
+		a := &App{Cfg: config.Config{PublicBaseURL: c.base}}
+		if got := a.pluginRepoURL(c.name); got != c.want {
+			t.Errorf("pluginRepoURL(base=%q, name=%q) = %q, want %q", c.base, c.name, got, c.want)
+		}
+	}
+}
+
+func TestPluginManifest_EmbedsSchemaAndRepository(t *testing.T) {
+	m := pluginManifest{
+		Schema:     PluginManifestSchemaURL,
+		Name:       "foo",
+		Repository: "https://example.com/git/foo.git",
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := string(out)
+	if !strings.Contains(body, `"$schema":"https://json.schemastore.org/claude-code-plugin-manifest.json"`) {
+		t.Errorf("missing $schema in plugin manifest: %s", body)
+	}
+	if !strings.Contains(body, `"repository":"https://example.com/git/foo.git"`) {
+		t.Errorf("missing repository in plugin manifest: %s", body)
 	}
 }
 

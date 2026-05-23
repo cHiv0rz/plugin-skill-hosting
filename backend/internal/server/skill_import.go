@@ -28,20 +28,23 @@ type parsedSkillFile struct {
 }
 
 type parsedSkillImport struct {
-	Name        string
-	Description string
-	Body        string
-	Files       []parsedSkillFile
+	Name             string
+	Description      string
+	Body             string
+	ExtraFrontmatter string
+	Files            []parsedSkillFile
 }
 
 // parseSkillFrontmatter extracts name+description from the YAML-style
 // frontmatter buildSkillMarkdown writes, and returns the rest of the document
-// as body. The first non-empty line must be "---" and the block terminates at
-// the next "---". In addition to plain "key: value" pairs it understands the
-// two block-scalar styles that show up in real SKILL.md files: folded (">")
-// collapses indented continuation lines into a single space-joined string
-// (preserving paragraph breaks), and literal ("|") keeps the newlines.
-func parseSkillFrontmatter(content []byte) (name, description, body string, err error) {
+// as body. Any frontmatter keys other than name and description are returned
+// verbatim in extra so they round-trip on re-materialization. The first
+// non-empty line must be "---" and the block terminates at the next "---". In
+// addition to plain "key: value" pairs it understands the two block-scalar
+// styles that show up in real SKILL.md files: folded (">") collapses indented
+// continuation lines into a single space-joined string (preserving paragraph
+// breaks), and literal ("|") keeps the newlines.
+func parseSkillFrontmatter(content []byte) (name, description, extra, body string, err error) {
 	lines := strings.Split(string(content), "\n")
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], "\r")
@@ -52,7 +55,7 @@ func parseSkillFrontmatter(content []byte) (name, description, body string, err 
 		i++
 	}
 	if i >= len(lines) || lines[i] != "---" {
-		return "", "", "", errors.New("SKILL.md must start with '---' frontmatter delimiter")
+		return "", "", "", "", errors.New("SKILL.md must start with '---' frontmatter delimiter")
 	}
 	i++
 	start := i
@@ -64,22 +67,59 @@ func parseSkillFrontmatter(content []byte) (name, description, body string, err 
 		}
 	}
 	if end == -1 {
-		return "", "", "", errors.New("SKILL.md frontmatter must be terminated with '---'")
+		return "", "", "", "", errors.New("SKILL.md frontmatter must be terminated with '---'")
 	}
 
-	fields := parseFrontmatterFields(lines[start:end])
+	block := lines[start:end]
+	fields := parseFrontmatterFields(block)
 	name = fields["name"]
 	description = fields["description"]
 	if name == "" {
-		return "", "", "", errors.New("SKILL.md frontmatter missing 'name'")
+		return "", "", "", "", errors.New("SKILL.md frontmatter missing 'name'")
 	}
 	if description == "" {
-		return "", "", "", errors.New("SKILL.md frontmatter missing 'description'")
+		return "", "", "", "", errors.New("SKILL.md frontmatter missing 'description'")
 	}
+	extra = extractExtraFrontmatter(block)
 
 	bodyStr := strings.Join(lines[end+1:], "\n")
 	body = strings.TrimLeft(bodyStr, "\n")
-	return name, description, body, nil
+	return name, description, extra, body, nil
+}
+
+// extractExtraFrontmatter walks the same line range parseFrontmatterFields
+// reads but returns the verbatim source for every top-level key other than
+// name and description. Continuation lines (indented or blank) follow the
+// preceding top-level key. The result preserves comments, YAML lists, block
+// scalars, and exact indentation so the round-trip is lossless.
+func extractExtraFrontmatter(lines []string) string {
+	var out []string
+	// Start "include = true" so any comments or unknown content before the
+	// first recognised key are preserved.
+	include := true
+	for _, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		indent := len(line) - len(trimmed)
+		if indent == 0 && trimmed != "" {
+			if idx := strings.Index(trimmed, ":"); idx > 0 {
+				key := strings.TrimSpace(trimmed[:idx])
+				switch key {
+				case "name", "description":
+					include = false
+				default:
+					include = true
+				}
+			}
+			// A non-colon column-0 line (e.g. a comment) inherits the
+			// current include state, so comments grouped with the current
+			// key follow that key's fate.
+		}
+		if include {
+			out = append(out, line)
+		}
+	}
+	// Drop leading/trailing blank lines but keep internal structure.
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
 // parseFrontmatterFields walks the lines between the two "---" markers and
@@ -267,15 +307,16 @@ func extractSkillZip(buf []byte) (*parsedSkillImport, error) {
 	if !utf8.Valid(skillBytes) {
 		return nil, errors.New("SKILL.md is not valid UTF-8")
 	}
-	name, description, body, err := parseSkillFrontmatter(skillBytes)
+	name, description, extra, body, err := parseSkillFrontmatter(skillBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	out := &parsedSkillImport{
-		Name:        strings.ToLower(strings.TrimSpace(name)),
-		Description: description,
-		Body:        body,
+		Name:             strings.ToLower(strings.TrimSpace(name)),
+		Description:      description,
+		Body:             body,
+		ExtraFrontmatter: extra,
 	}
 	totalBytes := 0
 	for _, f := range zr.File {
@@ -396,9 +437,9 @@ func (a *App) handleImportSkill(w http.ResponseWriter, r *http.Request) {
 
 	var id string
 	if err := tx.QueryRowContext(r.Context(), `
-		INSERT INTO skills (plugin_id, name, description, body, created_by, updated_by)
-		VALUES ($1, $2, $3, $4, $5, $5) RETURNING id
-	`, p.ID, parsed.Name, parsed.Description, parsed.Body, user.ID).Scan(&id); err != nil {
+		INSERT INTO skills (plugin_id, name, description, body, extra_frontmatter, created_by, updated_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING id
+	`, p.ID, parsed.Name, parsed.Description, parsed.Body, parsed.ExtraFrontmatter, user.ID).Scan(&id); err != nil {
 		respondDBOrConflict(w, err, "skill with that name already exists")
 		return
 	}
@@ -418,7 +459,7 @@ func (a *App) handleImportSkill(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := a.recordSkillVersion(r.Context(), tx, id, "create", parsed.Name, parsed.Description, parsed.Body, user.ID); err != nil {
+	if err := a.recordSkillVersion(r.Context(), tx, id, "create", parsed.Name, parsed.Description, parsed.Body, parsed.ExtraFrontmatter, user.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}

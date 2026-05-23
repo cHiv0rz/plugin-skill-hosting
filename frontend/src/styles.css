@@ -99,20 +99,6 @@ nav.top {
           backdrop-filter: blur(10px) saturate(140%);
   border-bottom: 1px solid var(--border);
 }
-nav.top .brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--mono);
-  font-weight: 600;
-  font-size: 12.5px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--text);
-  white-space: nowrap;
-}
-nav.top .brand:hover { color: var(--text); }
-nav.top .brand svg { color: var(--accent); }
 nav.top .links {
   display: flex;
   gap: 22px;

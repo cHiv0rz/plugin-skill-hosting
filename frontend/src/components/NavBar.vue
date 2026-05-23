@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter, RouterLink } from 'vue-router'
+import Breadcrumbs from './Breadcrumbs.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -18,19 +19,10 @@ function logout() {
 
 <template>
   <nav class="top">
-    <RouterLink to="/" class="brand" aria-label="Plugin marketplace home">
-      <svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true">
-        <path d="M4 8 L16 2 L28 8 L28 24 L16 30 L4 24 Z"
-              fill="none" stroke="currentColor" stroke-width="1.4" />
-        <path d="M16 2 L16 30 M4 8 L28 24 M28 8 L4 24"
-              stroke="currentColor" stroke-width="0.6" opacity="0.45" />
-      </svg>
-      <span>plugin&nbsp;/&nbsp;market</span>
-    </RouterLink>
+    <Breadcrumbs />
     <div class="links">
       <template v-if="auth.user">
         <template v-if="isApproved">
-          <RouterLink to="/">Plugins</RouterLink>
           <RouterLink to="/plugins/new" class="btn">+ New plugin</RouterLink>
           <RouterLink to="/users" class="user-link" :title="`Browse users — signed in as ${auth.user.username}`">
             <span class="user-link-at" aria-hidden="true">@</span>{{ auth.user.username }}

@@ -5,6 +5,7 @@ package config
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -84,6 +85,13 @@ func Load() Config {
 	}
 	if c.AuthMode != "password" && c.AuthMode != "oidc" {
 		log.Fatalf("AUTH_MODE must be 'password' or 'oidc', got %q", c.AuthMode)
+	}
+	// DataDir is used as a git remote URL for the per-plugin work tree's
+	// `origin`; a relative path would be resolved against the work tree's
+	// cwd at push time and fail. Absolute paths from Docker/Helm pass
+	// through unchanged.
+	if abs, err := filepath.Abs(c.DataDir); err == nil {
+		c.DataDir = abs
 	}
 	if c.OIDCRedirectURL == "" {
 		c.OIDCRedirectURL = strings.TrimRight(c.PublicBaseURL, "/") + "/api/auth/oidc/callback"

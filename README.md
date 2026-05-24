@@ -32,7 +32,7 @@ Plugin and skill versions are managed automatically: the first plugin a user cre
 
 ## Stack
 
-- **Backend**: Go 1.25 + chi + lib/pq + JWT (golang-jwt) + bcrypt + gitkit + the official [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) for the MCP server
+- **Backend**: Go 1.26 + chi + lib/pq + JWT (golang-jwt) + bcrypt + gitkit + the official [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) for the MCP server
 - **Frontend**: Vue 3 + Vite + Pinia + vue-router (TypeScript)
 - **Database**: Postgres 16
 - **Reverse proxy**: nginx (in the frontend container) — proxies `/api`, `/git`, `/mcp`, `/marketplace.json` to the backend

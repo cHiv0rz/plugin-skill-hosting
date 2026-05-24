@@ -96,199 +96,636 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-if="loading" class="muted">Loading…</div>
+  <p v-if="loading" class="pd-loading">loading…</p>
   <ErrorAlert v-else-if="error" :message="error" />
-  <div v-else-if="plugin">
-    <div class="row" style="margin-bottom: 16px">
-      <h1 style="margin: 0">{{ plugin.name }}</h1>
-      <span class="badge">{{ plugin.version }}</span>
-      <div class="spacer" />
-      <button v-if="isOwner" class="danger" @click="deletePlugin">Delete plugin</button>
-    </div>
-    <p class="muted" style="margin-top: 0">{{ plugin.description }}</p>
 
-    <div class="tabs" role="tablist">
+  <div v-else-if="plugin" class="pd">
+    <!-- Identity bar -->
+    <header class="pd-bar">
+      <div class="pd-bar__id">
+        <span class="pd-bar__kind">PLUGIN</span>
+        <span class="pd-bar__divider"></span>
+        <code class="pd-bar__path">{{ plugin.name }}</code>
+        <span class="pd-bar__ver">v{{ plugin.version }}</span>
+      </div>
+      <div class="pd-bar__actions">
+        <button
+          v-if="isOwner"
+          type="button"
+          class="pd-btn pd-btn--danger"
+          @click="deletePlugin"
+        >delete plugin</button>
+      </div>
+    </header>
+
+    <p v-if="plugin.description" class="pd-desc">{{ plugin.description }}</p>
+
+    <!-- Tabs -->
+    <nav class="pd-tabs" role="tablist">
       <button
         type="button"
-        class="tab"
+        class="pd-tab"
         role="tab"
-        :class="{ active: activeTab === 'skills' }"
+        :class="{ 'pd-tab--active': activeTab === 'skills' }"
         :aria-selected="activeTab === 'skills'"
         @click="activeTab = 'skills'"
       >
-        Skills
-        <span class="tab-count" :class="{ 'is-empty': (plugin.skills?.length ?? 0) === 0 }">
-          {{ plugin.skills?.length ?? 0 }}
-        </span>
+        skills
+        <span class="pd-tab__count">[{{ plugin.skills?.length ?? 0 }}]</span>
       </button>
       <button
         type="button"
-        class="tab"
+        class="pd-tab"
         role="tab"
-        :class="{ active: activeTab === 'connect' }"
+        :class="{ 'pd-tab--active': activeTab === 'connect' }"
         :aria-selected="activeTab === 'connect'"
         @click="activeTab = 'connect'"
-      >
-        Connect &amp; Meta
-      </button>
-    </div>
+      >connect &amp; meta</button>
+    </nav>
 
+    <!-- SKILLS tab -->
     <section v-show="activeTab === 'skills'" role="tabpanel">
-      <div class="card">
-        <div class="row">
-          <h2 style="margin: 0">Skills</h2>
-          <div class="spacer" />
-          <RouterLink
-            v-if="isAuthed"
-            :to="`/plugins/${plugin.name}/skills/new`"
-            class="btn"
-          >+ New skill</RouterLink>
-        </div>
-        <p v-if="!plugin.skills || plugin.skills.length === 0" class="muted">
-          No skills yet.
+      <div class="pd-toolbar">
+        <span class="pd-toolbar__count" v-if="plugin.skills?.length">
+          {{ plugin.skills.length }} skill{{ plugin.skills.length === 1 ? '' : 's' }}
+        </span>
+        <span class="spacer"></span>
+        <RouterLink
+          v-if="isAuthed"
+          :to="`/plugins/${plugin.name}/skills/new`"
+          class="pd-btn pd-btn--primary"
+        >+ new skill</RouterLink>
+      </div>
+
+      <div v-if="!plugin.skills || plugin.skills.length === 0" class="pd-empty">
+        <p class="pd-empty__line">
+          <span class="pd-empty__prompt">$</span>
+          no skills yet
         </p>
-        <table v-else>
+        <p class="pd-empty__hint" v-if="isAuthed">
+          add one above to start populating this plugin.
+        </p>
+      </div>
+
+      <table v-else class="pd-table">
+        <thead>
+          <tr>
+            <th>name</th>
+            <th>description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="s in plugin.skills" :key="s.id">
+            <td class="pd-table__name">
+              <RouterLink
+                v-if="isAuthed"
+                :to="`/plugins/${plugin.name}/skills/${s.name}/edit`"
+              >{{ s.name }}</RouterLink>
+              <span v-else>{{ s.name }}</span>
+            </td>
+            <td class="pd-table__desc">{{ s.description }}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <details v-if="deletedSkills.length > 0" class="pd-disclosure">
+        <summary class="pd-disclosure__head">
+          <span class="pd-disclosure__toggle" aria-hidden="true"></span>
+          <span class="pd-disclosure__title">deleted skills</span>
+          <span class="pd-disclosure__count">{{ deletedSkills.length }}</span>
+          <span class="spacer"></span>
+          <span class="pd-disclosure__hint" aria-hidden="true">
+            <span class="pd-disclosure__hint-open">expand</span>
+            <span class="pd-disclosure__hint-close">collapse</span>
+            <span class="pd-disclosure__chev">▸</span>
+          </span>
+        </summary>
+        <p class="pd-disclosure__note">
+          soft-deleted · restore to bring them back into the plugin.
+        </p>
+        <table class="pd-table pd-table--nested">
           <thead>
             <tr>
-              <th style="width: 28%">Name</th>
-              <th>Description</th>
+              <th>name</th>
+              <th>description</th>
+              <th>deleted</th>
+              <th v-if="isAuthed"></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="s in plugin.skills" :key="s.id">
-              <td>
-                <RouterLink
-                  v-if="isAuthed"
-                  :to="`/plugins/${plugin.name}/skills/${s.name}/edit`"
-                >{{ s.name }}</RouterLink>
-                <span v-else>{{ s.name }}</span>
+            <tr v-for="s in deletedSkills" :key="s.id">
+              <td>{{ s.name }}</td>
+              <td class="pd-table__desc">{{ s.description }}</td>
+              <td class="pd-table__when">
+                <span>{{ s.deletedByName || '—' }}</span>
+                <span class="pd-table__when-time">· {{ fmt(s.deletedAt) }}</span>
               </td>
-              <td>{{ s.description }}</td>
+              <td v-if="isAuthed" class="pd-table__act">
+                <button type="button" class="pd-btn" @click="restoreSkill(s.name)">restore</button>
+              </td>
             </tr>
           </tbody>
         </table>
-      </div>
-
-      <div v-if="deletedSkills.length > 0" class="card">
-        <details>
-          <summary class="muted" style="cursor: pointer">
-            Deleted skills ({{ deletedSkills.length }})
-          </summary>
-          <p class="muted" style="margin: 12px 0">
-            Soft-deleted; restore to bring them back into the plugin.
-          </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Deleted</th>
-                <th v-if="isAuthed"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="s in deletedSkills" :key="s.id">
-                <td>{{ s.name }}</td>
-                <td>{{ s.description }}</td>
-                <td class="muted" style="white-space: nowrap">
-                  <span v-if="s.deletedByName">{{ s.deletedByName }}</span>
-                  <span v-else>—</span>
-                  <br />
-                  <small>{{ fmt(s.deletedAt) }}</small>
-                </td>
-                <td v-if="isAuthed" style="text-align: right">
-                  <button class="secondary" @click="restoreSkill(s.name)">Restore</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </details>
-      </div>
+      </details>
     </section>
 
+    <!-- CONNECT & META tab -->
     <section v-show="activeTab === 'connect'" role="tabpanel">
-      <div class="card">
-        <h2 style="margin-bottom: 4px">Install this plugin in Claude Code</h2>
-        <p class="muted" style="margin: 0 0 12px">
-          Make sure you've added the marketplace first (see the Plugins page).
+      <div class="pd-block">
+        <header class="pd-block__head">
+          <span class="pd-block__title">install command</span>
+        </header>
+        <p class="pd-block__body">
+          make sure you've added the marketplace first (see the Plugins page).
         </p>
-        <pre style="white-space: pre-wrap; word-break: break-all">{{ installCmd }}</pre>
-        <div class="row" style="gap: 8px">
-          <button class="secondary" type="button" @click="copy(installCmd, 'cmd')">
-            {{ copied === 'cmd' ? 'Copied' : 'Copy command' }}
+        <div class="pd-code">
+          <pre>{{ installCmd }}</pre>
+        </div>
+        <div class="pd-code-actions">
+          <button type="button" class="pd-btn" @click="copy(installCmd, 'cmd')">
+            {{ copied === 'cmd' ? '✓ copied' : 'copy command' }}
           </button>
         </div>
       </div>
 
-      <div class="card">
-        <h2>Metadata</h2>
-        <table>
-          <tbody>
-            <tr><th>Owner</th><td>{{ plugin.ownerName }}</td></tr>
-            <tr v-if="plugin.authorName"><th>Author</th><td>{{ plugin.authorName }}</td></tr>
-            <tr v-if="plugin.authorEmail"><th>Email</th><td>{{ plugin.authorEmail }}</td></tr>
-            <tr v-if="plugin.homepage"><th>Homepage</th><td><a :href="plugin.homepage" target="_blank">{{ plugin.homepage }}</a></td></tr>
-            <tr v-if="plugin.license"><th>License</th><td>{{ plugin.license }}</td></tr>
-            <tr><th>Updated</th><td>{{ fmt(plugin.updatedAt) }}</td></tr>
-          </tbody>
-        </table>
+      <div class="pd-block">
+        <header class="pd-block__head">
+          <span class="pd-block__title">metadata</span>
+        </header>
+        <dl class="pd-meta">
+          <dt>owner</dt>
+          <dd>{{ plugin.ownerName }}</dd>
+          <template v-if="plugin.authorName">
+            <dt>author</dt>
+            <dd>{{ plugin.authorName }}</dd>
+          </template>
+          <template v-if="plugin.authorEmail">
+            <dt>email</dt>
+            <dd><a :href="`mailto:${plugin.authorEmail}`">{{ plugin.authorEmail }}</a></dd>
+          </template>
+          <template v-if="plugin.homepage">
+            <dt>homepage</dt>
+            <dd><a :href="plugin.homepage" target="_blank" rel="noopener noreferrer">{{ plugin.homepage }} ↗</a></dd>
+          </template>
+          <template v-if="plugin.license">
+            <dt>license</dt>
+            <dd>{{ plugin.license }}</dd>
+          </template>
+          <dt>updated</dt>
+          <dd class="pd-meta__dim">{{ fmt(plugin.updatedAt) }}</dd>
+        </dl>
       </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--border);
-  margin: 0 0 28px;
+.pd {
+  margin-top: -16px;
 }
-.tab {
+
+.pd-loading {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ─── Identity bar (matches skill edit) ─────────────────────────── */
+.pd-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  margin: 0 -16px 0;
+  background: var(--bg);
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border);
+}
+.pd-bar__id {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.pd-bar__kind {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  color: var(--accent);
+  padding: 3px 8px;
+  border: 1px solid var(--accent);
+  background: transparent;
+}
+.pd-bar__divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+.pd-bar__path {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.pd-bar__ver {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--accent-2);
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+}
+.pd-bar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pd-desc {
+  margin: 14px 0 22px;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-soft);
+  max-width: 72ch;
+}
+
+/* ─── Flat buttons ─────────────────────────────────────────────── */
+.pd-btn {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 6px 12px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  line-height: 1.5;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.pd-btn::before { display: none; content: none; }
+.pd-btn:hover {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--accent);
+  transform: none;
+}
+.pd-btn:active { transform: none; }
+.pd-btn:disabled,
+.pd-btn:disabled:hover {
+  opacity: 0.35;
+  cursor: not-allowed;
+  color: var(--text-soft);
+  border-color: var(--border);
+}
+.pd-btn--primary {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.pd-btn--primary:hover {
+  color: var(--bg);
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+.pd-btn--danger {
+  color: var(--rust);
+  border-color: rgba(214, 90, 49, 0.5);
+}
+.pd-btn--danger:hover {
+  color: var(--text);
+  background: var(--rust);
+  border-color: var(--rust);
+}
+
+/* ─── Tabs ─────────────────────────────────────────────────────── */
+.pd-tabs {
+  display: flex;
+  gap: 0;
+  margin: 0 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+.pd-tab {
   background: transparent;
   color: var(--text-soft);
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  padding: 12px 22px;
+  padding: 12px 18px;
   margin-bottom: -1px;
   font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  line-height: 1.4;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  transition: color 0.2s ease, border-color 0.2s ease;
+  gap: 8px;
+  transition: color 0.12s ease, border-color 0.12s ease;
 }
-.tab::before { display: none; }
-.tab:hover { color: var(--text); transform: none; }
-.tab.active {
+.pd-tab::before { display: none; content: none; }
+.pd-tab:hover { color: var(--text); transform: none; background: transparent; }
+.pd-tab--active {
   color: var(--text);
   border-bottom-color: var(--accent);
 }
-.tab-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 20px;
-  padding: 0 6px;
-  height: 18px;
+.pd-tab__count {
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+/* ─── Toolbar (above skills table) ─────────────────────────────── */
+.pd-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  flex-wrap: wrap;
+}
+.pd-toolbar__count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ─── Empty state ──────────────────────────────────────────────── */
+.pd-empty {
+  padding: 22px 24px;
+  border: 1px dashed var(--border);
+  background: var(--bg-2);
+}
+.pd-empty__line {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.pd-empty__prompt {
+  color: var(--accent);
+  margin-right: 8px;
+  font-weight: 700;
+}
+.pd-empty__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ─── Tables (matches portal page) ─────────────────────────────── */
+.pd-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  margin: 0 0 24px;
+  font-family: var(--mono);
+}
+.pd-table th {
+  text-align: left;
+  padding: 9px 14px;
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
   color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.pd-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13px;
+  color: var(--text);
+  vertical-align: top;
+}
+.pd-table tbody tr:last-child td { border-bottom: 0; }
+.pd-table tbody tr {
+  transition: background 0.12s ease;
+}
+.pd-table tbody tr:hover {
+  background: rgba(245, 165, 36, 0.04);
+}
+.pd-table__name a {
+  color: var(--text);
+  border-bottom: 1px solid var(--accent);
+  padding-bottom: 1px;
+  font-weight: 600;
+  transition: color 0.12s ease;
+}
+.pd-table__name a:hover { color: var(--accent); }
+.pd-table__desc { color: var(--text-soft); }
+.pd-table__when {
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.pd-table__when-time { display: block; font-size: 10.5px; }
+.pd-table__act { text-align: right; width: 1%; white-space: nowrap; }
+.pd-table--nested { margin: 0; }
+
+/* ─── Disclosure ───────────────────────────────────────────────── */
+.pd-disclosure {
+  margin-top: 14px;
+}
+.pd-disclosure__head {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  transition: opacity 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  background: var(--bg-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  user-select: none;
 }
-.tab-count.is-empty {
-  opacity: 0;
+.pd-disclosure__head::-webkit-details-marker { display: none; }
+.pd-disclosure__toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  flex: 0 0 auto;
+  transition: border-color 0.15s ease;
 }
-.tab.active .tab-count {
-  color: var(--accent-2);
-  border-color: rgba(245, 165, 36, 0.45);
+.pd-disclosure:not([open]) > .pd-disclosure__head .pd-disclosure__toggle::before { content: '+'; }
+.pd-disclosure[open] > .pd-disclosure__head .pd-disclosure__toggle::before { content: '−'; }
+.pd-disclosure__title { letter-spacing: inherit; flex: 0 0 auto; }
+.pd-disclosure__count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+.pd-disclosure__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pd-disclosure__hint-open,
+.pd-disclosure__hint-close { display: none; }
+.pd-disclosure:not([open]) > .pd-disclosure__head .pd-disclosure__hint-open { display: inline; }
+.pd-disclosure[open] > .pd-disclosure__head .pd-disclosure__hint-close { display: inline; }
+.pd-disclosure__chev {
+  display: inline-block;
+  color: var(--accent);
+  font-size: 12px;
+  transition: transform 0.18s ease;
+  letter-spacing: 0;
+}
+.pd-disclosure[open] > .pd-disclosure__head .pd-disclosure__chev { transform: rotate(90deg); }
+.pd-disclosure__head:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(245, 165, 36, 0.04);
+}
+.pd-disclosure__head:hover .pd-disclosure__toggle { border-color: var(--accent); }
+.pd-disclosure__head:hover .pd-disclosure__hint { color: var(--text-soft); }
+.pd-disclosure[open] > .pd-disclosure__head {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  margin-bottom: 12px;
+}
+.pd-disclosure__note {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ─── Connect blocks ───────────────────────────────────────────── */
+.pd-block {
+  margin: 0 0 28px;
+  padding: 0 0 0 16px;
+  border-left: 2px solid var(--border);
+}
+.pd-block__head { margin-bottom: 8px; }
+.pd-block__title {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.pd-block__body {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+  line-height: 1.55;
+}
+
+/* ─── Code block ───────────────────────────────────────────────── */
+.pd-code {
+  margin: 0 0 8px;
+}
+.pd-code pre {
+  margin: 0;
+  padding: 12px 14px 12px 22px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.pd-code pre::before { content: none; }
+.pd-code-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ─── Metadata list ────────────────────────────────────────────── */
+.pd-meta {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 6px 18px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.pd-meta dt {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 3px;
+}
+.pd-meta dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+.pd-meta dd a {
+  color: var(--text);
+  border-bottom: 1px solid var(--accent);
+  padding-bottom: 1px;
+  transition: color 0.12s ease;
+}
+.pd-meta dd a:hover { color: var(--accent); }
+.pd-meta__dim { color: var(--muted); }
+
+@media (max-width: 720px) {
+  .pd-bar { padding: 12px; }
+  .pd-tab { padding: 10px 12px; }
+  .pd-block { padding-left: 12px; }
+  .pd-code pre { padding: 10px 12px 10px 18px; font-size: 12px; }
+  .pd-meta { grid-template-columns: 90px 1fr; gap: 6px 12px; }
 }
 </style>

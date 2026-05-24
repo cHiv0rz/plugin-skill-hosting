@@ -217,7 +217,7 @@ This table is hand-maintained against `values.yaml`. Update both when adding or 
 | `serviceAccount.name` | string | `""` | Override the generated ServiceAccount name. |
 | `podSecurityContext.fsGroup` | int | `10001` | fsGroup matching the backend UID — required for the `/data` PVC to be group-writable. |
 | `securityContext` | object | non-root, runAsUser 10001, drop ALL caps | Backend container security context. |
-| `frontendSecurityContext` | object | drop ALL caps | Frontend container security context. Rendered onto the nginx container — set to `{}` to skip. |
+| `frontendSecurityContext` | object | `{}` | Frontend container security context. Empty by default because the stock `nginx:alpine` entrypoint needs `CHOWN`/`SETUID`/`SETGID`/`DAC_OVERRIDE` to set up `/var/cache/nginx` — see comment in `values.yaml` for the opt-in patterns. |
 | `imagePullSecrets` | list | `[{name: oglimmerregistrykey}]` | Image pull secrets. Set `[]` for public images. |
 | `nodeSelector` | object | `{}` | Node selector for pods. |
 | `tolerations` | list | `[]` | Tolerations for pods. |

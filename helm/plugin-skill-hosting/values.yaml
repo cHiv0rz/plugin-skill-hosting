@@ -228,13 +228,18 @@ securityContext:
       - ALL
   readOnlyRootFilesystem: false
 
-# Frontend (nginx) security context — nginx in the official image uses non-root
-# nginx user internally but binds to 80 via setcap; leave defaults.
-frontendSecurityContext:
-  capabilities:
-    drop:
-      - ALL
-  readOnlyRootFilesystem: false
+# Frontend (nginx) container security context. Rendered onto the web
+# container when non-empty. Default is empty because the stock nginx:alpine
+# entrypoint needs CHOWN/SETUID/SETGID/DAC_OVERRIDE to fix permissions on
+# /var/cache/nginx and switch to the nginx user — `drop: [ALL]` breaks it.
+# To opt in to hardening, either:
+#   (a) use an unprivileged nginx image (e.g. nginxinc/nginx-unprivileged)
+#       and set `capabilities.drop: [ALL]`, or
+#   (b) keep the stock image and drop only the unused caps explicitly:
+#         capabilities:
+#           drop: [ALL]
+#           add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, NET_BIND_SERVICE]
+frontendSecurityContext: {}
 
 nodeSelector: {}
 tolerations: []

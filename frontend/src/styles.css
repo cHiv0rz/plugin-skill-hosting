@@ -134,9 +134,9 @@ nav.top .user {
   margin-left: 4px;
   border-left: 1px solid var(--border);
 }
-/* Identity chip: the username is also the entry point to the users directory. */
-nav.top .links a.user-link,
-nav.top .links a.user-link:hover {
+/* Identity chip: the username is the entry point to /users for admins,
+   and a static "signed in as" label for everyone else (rendered as a span). */
+nav.top .links .user-link {
   display: inline-flex;
   align-items: baseline;
   gap: 2px;
@@ -158,7 +158,10 @@ nav.top .links a.user-link:hover {
 nav.top .links a.user-link.router-link-active {
   color: var(--text);
 }
-nav.top .links a.user-link .user-link-at {
+nav.top .links .user-link--static {
+  cursor: default;
+}
+nav.top .links .user-link .user-link-at {
   color: var(--accent);
   margin-right: 1px;
 }

@@ -20,6 +20,7 @@ const fakeUser = {
   username: 'alice',
   apiToken: 'tok',
   status: 'approved' as const,
+  isAdmin: false,
 }
 
 describe('auth store', () => {

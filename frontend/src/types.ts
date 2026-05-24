@@ -6,6 +6,7 @@ export interface User {
   username: string
   apiToken?: string
   status: UserStatus
+  isAdmin: boolean
 }
 
 export interface UserSummary {
@@ -13,6 +14,7 @@ export interface UserSummary {
   username: string
   email: string
   status: UserStatus
+  isAdmin: boolean
   createdAt: string
   approvedBy?: string
   approvedByName?: string

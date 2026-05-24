@@ -292,9 +292,9 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 	// 1) match by (issuer, subject) — already linked
 	u := &User{}
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token, status, created_at FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2`,
+		`SELECT id, email, username, api_token, status, is_admin, created_at FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2`,
 		issuer, claims.Sub,
-	).Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.CreatedAt)
+	).Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt)
 	if err == nil {
 		if u.Status == UserStatusRejected {
 			return nil, errors.New("account has been rejected")
@@ -309,8 +309,8 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 	email := strings.ToLower(strings.TrimSpace(claims.Email))
 	if email != "" && (claims.EmailVerified == nil || *claims.EmailVerified) {
 		err = a.DB.QueryRowContext(ctx,
-			`SELECT id, email, username, api_token, status, created_at FROM users WHERE email = $1`, email,
-		).Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.CreatedAt)
+			`SELECT id, email, username, api_token, status, is_admin, created_at FROM users WHERE email = $1`, email,
+		).Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt)
 		if err == nil {
 			if u.Status == UserStatusRejected {
 				return nil, errors.New("account has been rejected")
@@ -341,21 +341,25 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 	if err != nil {
 		return nil, err
 	}
-	// Status decision is made in SQL so the empty-DB bootstrap case is
-	// race-safe: the first ever user is always 'approved', even if two
-	// callbacks arrive simultaneously.
-	var id, status string
+	// Status and is_admin are decided in SQL so the empty-DB bootstrap case
+	// stays race-safe: the first ever user is always 'approved' AND admin,
+	// even if two callbacks arrive simultaneously.
+	var (
+		id, status string
+		isAdmin    bool
+	)
 	err = a.DB.QueryRowContext(ctx,
-		`INSERT INTO users (email, username, oidc_issuer, oidc_subject, api_token, status)
+		`INSERT INTO users (email, username, oidc_issuer, oidc_subject, api_token, status, is_admin)
 		 VALUES ($1, $2, $3, $4, $5,
 		     CASE
 		         WHEN $6::boolean AND EXISTS (SELECT 1 FROM users WHERE status = 'approved')
 		             THEN 'pending'
 		         ELSE 'approved'
-		     END)
-		 RETURNING id, status, created_at`,
+		     END,
+		     NOT EXISTS (SELECT 1 FROM users))
+		 RETURNING id, status, is_admin, created_at`,
 		email, username, issuer, claims.Sub, apiTok, a.Cfg.RequiresUserApproval(),
-	).Scan(&id, &status, &u.CreatedAt)
+	).Scan(&id, &status, &isAdmin, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -364,6 +368,7 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 	u.Username = username
 	u.APIToken = apiTok
 	u.Status = status
+	u.IsAdmin = isAdmin
 	return u, nil
 }
 

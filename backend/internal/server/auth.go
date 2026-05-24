@@ -128,6 +128,25 @@ func (a *App) requireApprovedMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// requireAdminMiddleware refuses requests from non-admin users. Must run AFTER
+// authMiddleware + requireApprovedMiddleware (the admin set is a subset of
+// approved users). User-management endpoints are gated to admins; everything
+// else stays open to any approved user.
+func (a *App) requireAdminMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := currentUser(r)
+		if u == nil {
+			writeErr(w, http.StatusUnauthorized, "missing bearer token")
+			return
+		}
+		if !u.IsAdmin {
+			writeErr(w, http.StatusForbidden, "admin only")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // tokenGateMiddleware authenticates marketplace.json, /git/*, and the read-only
 // plugin endpoints. On failure it sends WWW-Authenticate so `git clone` and
 // curl prompt for credentials.
@@ -179,8 +198,8 @@ func generateAPIToken() (string, error) {
 func (a *App) userByAPIToken(ctx context.Context, token string) (*User, error) {
 	u := &User{}
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token, status, created_at FROM users WHERE api_token = $1`, token).
-		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.CreatedAt)
+		`SELECT id, email, username, api_token, status, is_admin, created_at FROM users WHERE api_token = $1`, token).
+		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -190,8 +209,8 @@ func (a *App) userByAPIToken(ctx context.Context, token string) (*User, error) {
 func (a *App) userByID(ctx context.Context, id string) (*User, error) {
 	u := &User{}
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token, status, created_at FROM users WHERE id = $1`, id).
-		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.CreatedAt)
+		`SELECT id, email, username, api_token, status, is_admin, created_at FROM users WHERE id = $1`, id).
+		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -237,10 +256,19 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var id string
+	// is_admin is computed in SQL so the empty-DB bootstrap is decided
+	// atomically with the INSERT (matches the OIDC create path's
+	// approved-bootstrap pattern). The first ever user lands as admin so the
+	// /users page is operable immediately on a fresh deployment.
+	var (
+		id      string
+		isAdmin bool
+	)
 	err = a.DB.QueryRowContext(r.Context(),
-		`INSERT INTO users (email, username, password_hash, api_token) VALUES ($1, $2, $3, $4) RETURNING id`,
-		req.Email, req.Username, string(hash), apiTok).Scan(&id)
+		`INSERT INTO users (email, username, password_hash, api_token, is_admin)
+		 VALUES ($1, $2, $3, $4, NOT EXISTS (SELECT 1 FROM users))
+		 RETURNING id, is_admin`,
+		req.Email, req.Username, string(hash), apiTok).Scan(&id, &isAdmin)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
 			writeErr(w, http.StatusConflict, "email or username already in use")
@@ -263,6 +291,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 			Username: req.Username,
 			APIToken: apiTok,
 			Status:   UserStatusApproved,
+			IsAdmin:  isAdmin,
 		},
 	})
 }
@@ -282,10 +311,11 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		id, username, hash, apiTok, status string
+		isAdmin                            bool
 	)
 	err := a.DB.QueryRowContext(r.Context(),
-		`SELECT id, username, password_hash, api_token, status FROM users WHERE email = $1`, req.Email).
-		Scan(&id, &username, &hash, &apiTok, &status)
+		`SELECT id, username, password_hash, api_token, status, is_admin FROM users WHERE email = $1`, req.Email).
+		Scan(&id, &username, &hash, &apiTok, &status, &isAdmin)
 	if err != nil {
 		metrics.LoginsTotal.WithLabelValues("password", "failure").Inc()
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
@@ -311,6 +341,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			Username: username,
 			APIToken: apiTok,
 			Status:   status,
+			IsAdmin:  isAdmin,
 		},
 	})
 }

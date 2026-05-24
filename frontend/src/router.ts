@@ -72,7 +72,7 @@ export const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   if (to.meta.requiresAuth) {
     const auth = useAuthStore()
     if (!auth.token) {
@@ -86,6 +86,17 @@ router.beforeEach((to) => {
     }
     if (status === 'approved' && to.path === '/pending') {
       return { path: '/' }
+    }
+    // /users is admin-only, and additionally hidden in OIDC + Google Workspace
+    // mode where membership is managed by the upstream `hd` filter. ensureMode
+    // is awaited because direct deep-links can arrive before auth config has
+    // been fetched and userApprovalRequired would otherwise be unset.
+    if (to.path === '/users') {
+      await auth.ensureMode()
+      const userMgmtOn = auth.mode !== 'oidc' || auth.userApprovalRequired
+      if (!auth.user?.isAdmin || !userMgmtOn) {
+        return { path: '/' }
+      }
     }
   }
 })

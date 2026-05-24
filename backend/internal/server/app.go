@@ -41,6 +41,7 @@ type User struct {
 	Username  string    `json:"username"`
 	APIToken  string    `json:"apiToken,omitempty"`
 	Status    string    `json:"status"`
+	IsAdmin   bool      `json:"isAdmin"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 

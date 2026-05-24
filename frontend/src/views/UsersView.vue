@@ -68,6 +68,29 @@ async function remove(u: UserSummary) {
   }
 }
 
+async function setAdmin(u: UserSummary, makeAdmin: boolean) {
+  const ok = await confirm({
+    title: makeAdmin ? `Make ${u.username} an admin?` : `Remove admin from ${u.username}?`,
+    message: makeAdmin
+      ? `${u.username} will be able to approve, reject, and delete users — including other admins.`
+      : `${u.username} will lose access to the user-management page and to admin-only actions.`,
+    confirmLabel: makeAdmin ? 'Promote' : 'Demote',
+    danger: !makeAdmin,
+  })
+  if (!ok) return
+  error.value = ''
+  busyId.value = u.id
+  try {
+    if (makeAdmin) await api.promoteUser(u.id)
+    else await api.demoteUser(u.id)
+    await load()
+  } catch (e: unknown) {
+    error.value = errMsg(e)
+  } finally {
+    busyId.value = null
+  }
+}
+
 async function reject(u: UserSummary) {
   const ok = await confirm({
     title: `Reject ${u.username}?`,
@@ -165,12 +188,15 @@ onMounted(load)
             <th>Email</th>
             <th>Joined</th>
             <th>Approved by</th>
-            <th v-if="approvalFlow" class="actions-col"></th>
+            <th class="actions-col"></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="u in approved" :key="u.id">
-            <td style="padding-left: 20px">{{ u.username }}</td>
+            <td style="padding-left: 20px">
+              {{ u.username }}
+              <span v-if="u.isAdmin" class="chip chip--admin" title="Administrator">admin</span>
+            </td>
             <td class="muted">{{ u.email }}</td>
             <td class="muted" style="white-space: nowrap">
               <small>{{ fmt(u.createdAt) }}</small>
@@ -182,16 +208,25 @@ onMounted(load)
               </template>
               <small v-else>—</small>
             </td>
-            <td v-if="approvalFlow" class="actions">
-              <button
-                v-if="u.id !== auth.user?.id"
-                type="button"
-                class="danger"
-                :disabled="busyId === u.id"
-                @click="reject(u)"
-              >
-                Reject
-              </button>
+            <td class="actions">
+              <template v-if="u.id !== auth.user?.id">
+                <button
+                  type="button"
+                  class="secondary"
+                  :disabled="busyId === u.id"
+                  @click="setAdmin(u, !u.isAdmin)"
+                >
+                  {{ u.isAdmin ? 'Demote' : 'Promote' }}
+                </button>
+                <button
+                  type="button"
+                  class="danger"
+                  :disabled="busyId === u.id"
+                  @click="reject(u)"
+                >
+                  Reject
+                </button>
+              </template>
             </td>
           </tr>
         </tbody>
@@ -282,6 +317,12 @@ onMounted(load)
 .chip--pending {
   color: var(--accent);
   border-color: rgba(245, 165, 36, 0.5);
+}
+.chip--admin {
+  margin-left: 8px;
+  color: var(--accent);
+  border-color: rgba(245, 165, 36, 0.5);
+  text-transform: uppercase;
 }
 .actions {
   text-align: right;

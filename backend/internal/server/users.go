@@ -16,6 +16,7 @@ type UserSummary struct {
 	Username       string     `json:"username"`
 	Email          string     `json:"email"`
 	Status         string     `json:"status"`
+	IsAdmin        bool       `json:"isAdmin"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	ApprovedBy     *string    `json:"approvedBy,omitempty"`
 	ApprovedByName *string    `json:"approvedByName,omitempty"`
@@ -26,7 +27,7 @@ type UserSummary struct {
 // then approved (oldest first — gives a stable directory), then rejected
 // for audit purposes.
 const userListSelect = `
-	SELECT u.id, u.username, u.email, u.status, u.created_at,
+	SELECT u.id, u.username, u.email, u.status, u.is_admin, u.created_at,
 	       u.approved_by, ap.username, u.approved_at
 	FROM users u
 	LEFT JOIN users ap ON ap.id = u.approved_by
@@ -47,7 +48,7 @@ func (a *App) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		var u UserSummary
 		var approvedBy, approvedByName sql.NullString
 		var approvedAt sql.NullTime
-		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Status, &u.CreatedAt,
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Status, &u.IsAdmin, &u.CreatedAt,
 			&approvedBy, &approvedByName, &approvedAt); err != nil {
 			writeErr(w, http.StatusInternalServerError, "db error")
 			return
@@ -201,6 +202,70 @@ func (a *App) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM users WHERE id = $1 AND status = 'rejected'`, id,
 	); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// setAdmin flips the is_admin flag on another user. Self-changes are blocked
+// so an admin can't accidentally orphan their own access, and so the "last
+// admin standing" cannot demote themselves into a lockout. Only acts on
+// approved users — pending/rejected accounts must first be approved.
+func (a *App) setAdmin(r *http.Request, targetID string, makeAdmin bool) (int, string) {
+	actor := currentUser(r)
+	if actor == nil {
+		return http.StatusUnauthorized, "missing bearer token"
+	}
+	if actor.ID == targetID {
+		return http.StatusBadRequest, "cannot change your own admin status"
+	}
+
+	res, err := a.DB.ExecContext(r.Context(),
+		`UPDATE users SET is_admin = $1 WHERE id = $2 AND status = 'approved'`,
+		makeAdmin, targetID)
+	if err != nil {
+		return http.StatusInternalServerError, "db error"
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return http.StatusInternalServerError, "db error"
+	}
+	if n == 0 {
+		var status string
+		err := a.DB.QueryRowContext(r.Context(),
+			`SELECT status FROM users WHERE id = $1`, targetID).Scan(&status)
+		if err == sql.ErrNoRows {
+			return http.StatusNotFound, "user not found"
+		}
+		if err != nil {
+			return http.StatusInternalServerError, "db error"
+		}
+		return http.StatusConflict, "only approved users can be promoted or demoted"
+	}
+	return 0, ""
+}
+
+func (a *App) handlePromoteUser(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if status, msg := a.setAdmin(r, id, true); status != 0 {
+		writeErr(w, status, msg)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *App) handleDemoteUser(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if status, msg := a.setAdmin(r, id, false); status != 0 {
+		writeErr(w, status, msg)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -18,9 +18,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const u = JSON.parse(raw) as Partial<User> | null
       if (!u || typeof u !== 'object' || !u.id) return null
-      // Legacy sessions saved before the approval flow shipped have no
-      // status field; treat them as approved so existing logins keep working.
-      return { ...u, status: u.status ?? 'approved' } as User
+      // Legacy sessions saved before the approval/admin flows shipped have no
+      // status or isAdmin field; treat them as approved non-admins so existing
+      // logins keep working — /api/me refresh will fill in the real values.
+      return { ...u, status: u.status ?? 'approved', isAdmin: u.isAdmin ?? false } as User
     } catch { return null }
   }
 

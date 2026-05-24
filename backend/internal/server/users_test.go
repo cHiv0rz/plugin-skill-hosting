@@ -40,6 +40,8 @@ func TestListUsers_RequiresAuth(t *testing.T) {
 		{"GET", "/api/users"},
 		{"POST", "/api/users/00000000-0000-0000-0000-000000000000/approve"},
 		{"POST", "/api/users/00000000-0000-0000-0000-000000000000/reject"},
+		{"POST", "/api/users/00000000-0000-0000-0000-000000000000/promote"},
+		{"POST", "/api/users/00000000-0000-0000-0000-000000000000/demote"},
 		{"DELETE", "/api/users/00000000-0000-0000-0000-000000000000"},
 	}
 	for _, c := range cases {
@@ -47,6 +49,39 @@ func TestListUsers_RequiresAuth(t *testing.T) {
 		h.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, nil))
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s: status = %d, want 401", c.method, c.path, rec.Code)
+		}
+	}
+}
+
+func TestRequireAdminMiddleware_Forbids(t *testing.T) {
+	a := &App{}
+	called := false
+	h := a.requireAdminMiddleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	cases := []struct {
+		name       string
+		user       *User
+		wantCode   int
+		wantCalled bool
+	}{
+		{"no user", nil, http.StatusUnauthorized, false},
+		{"non-admin", &User{ID: "u1", Status: UserStatusApproved, IsAdmin: false}, http.StatusForbidden, false},
+		{"admin", &User{ID: "u1", Status: UserStatusApproved, IsAdmin: true}, http.StatusOK, true},
+	}
+	for _, c := range cases {
+		called = false
+		r := httptest.NewRequest("GET", "/", nil)
+		if c.user != nil {
+			r = r.WithContext(context.WithValue(r.Context(), ctxUserKey, c.user))
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		if rec.Code != c.wantCode {
+			t.Errorf("%s: code = %d, want %d", c.name, rec.Code, c.wantCode)
+		}
+		if called != c.wantCalled {
+			t.Errorf("%s: handler called = %v, want %v", c.name, called, c.wantCalled)
 		}
 	}
 }

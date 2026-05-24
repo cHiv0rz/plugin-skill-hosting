@@ -11,6 +11,12 @@ onMounted(() => { auth.ensureMode() })
 
 const isApproved = computed(() => auth.user?.status === 'approved')
 
+// User-management UI is hidden in OIDC+hd mode (the workspace filter handles
+// membership) and for non-admin users (only admins can list/approve/reject).
+const canManageUsers = computed(() =>
+  !!auth.user?.isAdmin && (auth.mode !== 'oidc' || auth.userApprovalRequired)
+)
+
 function logout() {
   if (auth.doLogout()) return // full-page redirect already in flight
   router.push('/login')
@@ -24,9 +30,21 @@ function logout() {
       <template v-if="auth.user">
         <template v-if="isApproved">
           <RouterLink to="/plugins/new" class="btn">+ New plugin</RouterLink>
-          <RouterLink to="/users" class="user-link" :title="`Browse users — signed in as ${auth.user.username}`">
+          <RouterLink
+            v-if="canManageUsers"
+            to="/users"
+            class="user-link"
+            :title="`Manage users — signed in as ${auth.user.username}`"
+          >
             <span class="user-link-at" aria-hidden="true">@</span>{{ auth.user.username }}
           </RouterLink>
+          <span
+            v-else
+            class="user-link user-link--static"
+            :title="`Signed in as ${auth.user.username}`"
+          >
+            <span class="user-link-at" aria-hidden="true">@</span>{{ auth.user.username }}
+          </span>
         </template>
         <template v-else>
           <span class="user pending-chip" :title="`Signed in as ${auth.user.username} — awaiting approval`">

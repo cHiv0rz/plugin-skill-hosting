@@ -38,6 +38,9 @@ var migration0008 string
 //go:embed migrations/0009_skill_extra_frontmatter.sql
 var migration0009 string
 
+//go:embed migrations/0010_user_admin.sql
+var migration0010 string
+
 func Open(url string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", url)
 	if err != nil {
@@ -79,6 +82,9 @@ func Migrate(db *sql.DB) error {
 	}
 	if _, err := db.Exec(migration0009); err != nil {
 		return fmt.Errorf("0009_skill_extra_frontmatter: %w", err)
+	}
+	if _, err := db.Exec(migration0010); err != nil {
+		return fmt.Errorf("0010_user_admin: %w", err)
 	}
 	return nil
 }

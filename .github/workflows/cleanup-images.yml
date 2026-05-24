@@ -12,15 +12,10 @@ jobs:
   cleanup:
     name: Delete untagged image versions
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        package:
-          - plugin-skill-hosting-backend
-          - plugin-skill-hosting-frontend
     steps:
-      - uses: actions/delete-package-versions@v5
+      - uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          package-name: ${{ matrix.package }}
-          package-type: container
-          delete-only-untagged-versions: 'true'
-          min-versions-to-keep: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          owner: oglimmer
+          packages: plugin-skill-hosting-backend,plugin-skill-hosting-frontend
+          delete-untagged: true

@@ -133,7 +133,7 @@ kubectl create secret generic plugin-skill-hosting-secret \
 
 When `postgres.enabled=false`, replace `POSTGRES_PASSWORD` with `DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=require`.
 
-The production deployment in this repo keeps its `SealedSecret` at [`helm/argocd/plugin-skill-hosting-sealed-secret.yaml`](../argocd/plugin-skill-hosting-sealed-secret.yaml) — apply it once with `kubectl apply -f` alongside the Argo CD `Application`.
+The production deployment in this repo keeps its `SealedSecret` at [`helm/argocd/plugin-skill-hosting-sealed-secret.yaml`](../argocd/plugin-skill-hosting-sealed-secret.yaml). It is reconciled by a dedicated Argo CD `Application` ([`plugin-skill-hosting-secret-app.yaml`](../argocd/plugin-skill-hosting-secret-app.yaml)) — separate from the chart's `Application` so the SealedSecret has `prune: false` while chart resources keep `prune: true`. Apply both with `kubectl apply -f helm/argocd/`.
 
 ## Install / upgrade / uninstall
 

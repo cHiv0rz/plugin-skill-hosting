@@ -163,13 +163,15 @@ Two product-level points worth knowing before you read the chart docs:
 A starter ArgoCD `Application` manifest lives at [`helm/argocd/plugin-skill-hosting-app.yaml`](helm/argocd/plugin-skill-hosting-app.yaml). It points at this repo's chart on `master`, sets `backend.image.tag=latest` / `frontend.image.tag=latest`, and is annotated for [argocd-image-updater](https://argocd-image-updater.readthedocs.io/) (digest strategy) so new pushes of `:latest` roll out automatically.
 
 ```bash
-# 1. apply the application secret (env-scoped — name + namespace + ciphertext
-#    are pinned to the controller key in the target cluster)
-kubectl apply -f helm/argocd/plugin-skill-hosting-sealed-secret.yaml
-
-# 2. apply the ArgoCD Application — it syncs the chart from this repo
-kubectl apply -f helm/argocd/plugin-skill-hosting-app.yaml
+# Apply both Argo CD Applications and the SealedSecret in one go. The
+# chart's Application syncs the workloads; the secret-only Application
+# (prune=false) keeps the SealedSecret reconciled from git in the default
+# namespace. The SealedSecret manifest itself is in this directory so the
+# secret-only Application can find it.
+kubectl apply -f helm/argocd/
 ```
+
+On a fresh cluster both Applications register concurrently. The chart's pods may briefly `CrashLoopBackOff` until the secret-only Application creates the SealedSecret and the sealed-secrets controller materializes the underlying Secret — Argo CD self-heals from there.
 
 ### Build and push images
 

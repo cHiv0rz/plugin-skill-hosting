@@ -36,19 +36,17 @@ func TestListUsers_RequiresAuth(t *testing.T) {
 		JWTSecret: "x",
 	}}
 	h := NewRouter(app)
-	for _, path := range []string{
-		"/api/users",
-		"/api/users/00000000-0000-0000-0000-000000000000/approve",
-		"/api/users/00000000-0000-0000-0000-000000000000/reject",
-	} {
-		method := "GET"
-		if path != "/api/users" {
-			method = "POST"
-		}
+	cases := []struct{ method, path string }{
+		{"GET", "/api/users"},
+		{"POST", "/api/users/00000000-0000-0000-0000-000000000000/approve"},
+		{"POST", "/api/users/00000000-0000-0000-0000-000000000000/reject"},
+		{"DELETE", "/api/users/00000000-0000-0000-0000-000000000000"},
+	}
+	for _, c := range cases {
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+		h.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, nil))
 		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("%s %s: status = %d, want 401", method, path, rec.Code)
+			t.Errorf("%s %s: status = %d, want 401", c.method, c.path, rec.Code)
 		}
 	}
 }

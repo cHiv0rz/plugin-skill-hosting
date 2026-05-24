@@ -81,6 +81,7 @@ func NewRouter(app *App) http.Handler {
 				r.Get("/users", app.handleListUsers)
 				r.Post("/users/{id}/approve", app.handleApproveUser)
 				r.Post("/users/{id}/reject", app.handleRejectUser)
+				r.Delete("/users/{id}", app.handleDeleteUser)
 				r.Get("/plugins", app.handleListPlugins)
 				r.Get("/plugins/{name}", app.handleGetPlugin)
 				r.Post("/plugins", app.handleCreatePlugin)

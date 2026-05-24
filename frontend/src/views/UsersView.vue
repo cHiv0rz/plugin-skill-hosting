@@ -48,6 +48,26 @@ async function approve(u: UserSummary) {
   }
 }
 
+async function remove(u: UserSummary) {
+  const ok = await confirm({
+    title: `Delete ${u.username}?`,
+    message: `${u.username} will be permanently removed from the database. This cannot be undone.`,
+    confirmLabel: 'Delete',
+    danger: true,
+  })
+  if (!ok) return
+  error.value = ''
+  busyId.value = u.id
+  try {
+    await api.deleteUser(u.id)
+    await load()
+  } catch (e: unknown) {
+    error.value = errMsg(e)
+  } finally {
+    busyId.value = null
+  }
+}
+
 async function reject(u: UserSummary) {
   const ok = await confirm({
     title: `Reject ${u.username}?`,
@@ -207,6 +227,14 @@ onMounted(load)
                   @click="approve(u)"
                 >
                   {{ busyId === u.id ? 'Working…' : 'Approve' }}
+                </button>
+                <button
+                  type="button"
+                  class="danger"
+                  :disabled="busyId === u.id"
+                  @click="remove(u)"
+                >
+                  Delete
                 </button>
               </td>
             </tr>

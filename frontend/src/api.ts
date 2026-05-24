@@ -60,6 +60,8 @@ export const api = {
     request<void>(`/api/users/${id}/approve`, { method: 'POST' }),
   rejectUser: (id: string) =>
     request<void>(`/api/users/${id}/reject`, { method: 'POST' }),
+  deleteUser: (id: string) =>
+    request<void>(`/api/users/${id}`, { method: 'DELETE' }),
   listPlugins: () => request<Plugin[]>('/api/plugins'),
   getPlugin: (name: string) => request<Plugin>(`/api/plugins/${name}`),
   createPlugin: (data: Partial<Plugin>) =>

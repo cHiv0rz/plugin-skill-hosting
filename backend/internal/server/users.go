@@ -156,6 +156,56 @@ func (a *App) handleRejectUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDeleteUser hard-deletes a rejected user, but only if they never
+// owned a plugin. The plugin check is intentionally strict — it counts
+// soft-deleted rows too, so anyone who has ever produced content keeps
+// their audit trail. A user who simply registered and was rejected has no
+// owned plugins and can be removed entirely.
+func (a *App) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var status string
+	err := a.DB.QueryRowContext(r.Context(),
+		`SELECT status FROM users WHERE id = $1`, id).Scan(&status)
+	if err == sql.ErrNoRows {
+		writeErr(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if status != UserStatusRejected {
+		writeErr(w, http.StatusConflict, "only rejected users can be deleted")
+		return
+	}
+
+	var pluginCount int
+	if err := a.DB.QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM plugins WHERE owner_id = $1`, id,
+	).Scan(&pluginCount); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if pluginCount > 0 {
+		writeErr(w, http.StatusConflict,
+			"user has owned plugins and cannot be deleted")
+		return
+	}
+
+	if _, err := a.DB.ExecContext(r.Context(),
+		`DELETE FROM users WHERE id = $1 AND status = 'rejected'`, id,
+	); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // isUUID is a light-touch shape check — we don't need to validate the
 // version/variant nibble, just keep junk out of the SQL parameter so the DB
 // returns a clean "not found" instead of a 22P02 type error.

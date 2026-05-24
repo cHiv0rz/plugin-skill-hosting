@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: plugin-skill-hosting
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.discord: ""
+    notifications.argoproj.io/subscribe.on-sync-failed.discord: ""
+    notifications.argoproj.io/subscribe.on-health-degraded.discord: ""
+    argocd-image-updater.argoproj.io/image-list: >-
+      backend=ghcr.io/oglimmer/plugin-skill-hosting-backend:latest,
+      frontend=ghcr.io/oglimmer/plugin-skill-hosting-frontend:latest
+    argocd-image-updater.argoproj.io/backend.update-strategy: digest
+    argocd-image-updater.argoproj.io/frontend.update-strategy: digest
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/oglimmer/plugin-skill-hosting.git
+    targetRevision: master
+    path: helm/plugin-skill-hosting
+    helm:
+      valueFiles:
+        - values.yaml
+      parameters:
+        - name: backend.image.tag
+          value: latest
+        - name: frontend.image.tag
+          value: latest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

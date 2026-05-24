@@ -158,6 +158,14 @@ Two product-level points worth knowing before you read the chart docs:
 - `publicBaseURL` must be **HTTPS** — Claude Code rejects `http://` plugin sources, and the URL is embedded in `marketplace.json`.
 - The chart deploys backend + frontend + Postgres + ingress + a sealed secret. Postgres can be turned off (`postgres.enabled=false`) to use an external DB; in that case `DATABASE_URL` goes into the sealed secret.
 
+### Deploy via ArgoCD
+
+A starter ArgoCD `Application` manifest lives at [`helm/argocd/plugin-skill-hosting-app.yaml`](helm/argocd/plugin-skill-hosting-app.yaml). It points at this repo's chart on `master`, sets `backend.image.tag=latest` / `frontend.image.tag=latest`, and is annotated for [argocd-image-updater](https://argocd-image-updater.readthedocs.io/) (digest strategy) so new pushes of `:latest` roll out automatically.
+
+```bash
+kubectl apply -f helm/argocd/plugin-skill-hosting-app.yaml
+```
+
 ### Build and push images
 
 Images live at `ghcr.io/oglimmer/plugin-skill-hosting-{backend,frontend}`.

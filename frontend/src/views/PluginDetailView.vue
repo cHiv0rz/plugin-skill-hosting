@@ -62,23 +62,6 @@ async function load() {
   }
 }
 
-async function deleteSkill(name: string) {
-  if (!plugin.value) return
-  const ok = await confirm({
-    title: 'Delete skill',
-    message: `Delete skill "${name}"? You can restore it later from the Deleted skills section.`,
-    confirmLabel: 'Delete',
-    danger: true,
-  })
-  if (!ok) return
-  try {
-    await api.deleteSkill(plugin.value.name, name)
-    await load()
-  } catch (e: unknown) {
-    error.value = errMsg(e)
-  }
-}
-
 async function restoreSkill(name: string) {
   if (!plugin.value) return
   try {
@@ -167,11 +150,8 @@ onMounted(() => {
         <table v-else>
           <thead>
             <tr>
-              <th>Name</th>
+              <th style="width: 28%">Name</th>
               <th>Description</th>
-              <th>Created</th>
-              <th>Last edited</th>
-              <th v-if="isAuthed"></th>
             </tr>
           </thead>
           <tbody>
@@ -184,21 +164,6 @@ onMounted(() => {
                 <span v-else>{{ s.name }}</span>
               </td>
               <td>{{ s.description }}</td>
-              <td class="muted" style="white-space: nowrap">
-                <span v-if="s.createdByName">{{ s.createdByName }}</span>
-                <span v-else>—</span>
-                <br />
-                <small>{{ fmt(s.createdAt) }}</small>
-              </td>
-              <td class="muted" style="white-space: nowrap">
-                <span v-if="s.updatedByName">{{ s.updatedByName }}</span>
-                <span v-else>—</span>
-                <br />
-                <small>{{ fmt(s.updatedAt) }}</small>
-              </td>
-              <td v-if="isAuthed" style="text-align: right">
-                <button class="secondary" @click="deleteSkill(s.name)">Delete</button>
-              </td>
             </tr>
           </tbody>
         </table>

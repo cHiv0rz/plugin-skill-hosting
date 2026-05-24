@@ -247,6 +247,24 @@ function cancel() {
   router.push(`/plugins/${props.pluginName}`)
 }
 
+async function deleteSkill() {
+  if (!props.skillName) return
+  const ok = await confirm({
+    title: 'Delete skill',
+    message: `Delete skill "${props.skillName}"? You can restore it later from the Deleted skills section on the plugin page.`,
+    confirmLabel: 'Delete',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await api.deleteSkill(props.pluginName, props.skillName)
+    bypassGuard = true
+    router.push(`/plugins/${props.pluginName}`)
+  } catch (e: unknown) {
+    error.value = errMsg(e)
+  }
+}
+
 async function validate() {
   validationError.value = ''
   validationReport.value = null
@@ -325,7 +343,11 @@ watch(() => props.skillName, load)
 </script>
 
 <template>
-  <h1>{{ isEdit ? `Edit skill: ${skillName}` : 'New skill' }}</h1>
+  <div class="row" style="margin-bottom: 16px">
+    <h1 style="margin: 0">{{ isEdit ? `Edit skill: ${skillName}` : 'New skill' }}</h1>
+    <div class="spacer" />
+    <button v-if="isEdit" class="danger" @click="deleteSkill">Delete skill</button>
+  </div>
 
   <!-- Create mode: simple single-column form (no file tree until skill exists) -->
   <div v-if="!isEdit" class="card">

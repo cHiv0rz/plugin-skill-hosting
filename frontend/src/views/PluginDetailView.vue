@@ -635,6 +635,10 @@ onMounted(() => {
 .pd-table tbody tr:hover {
   background: rgba(245, 165, 36, 0.04);
 }
+.pd-table__name {
+  width: 25%;
+  overflow-wrap: anywhere;
+}
 .pd-table__name a {
   color: var(--text);
   border-bottom: 1px solid var(--accent);

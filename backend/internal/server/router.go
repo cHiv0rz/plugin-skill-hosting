@@ -17,7 +17,7 @@ func NewRouter(app *App) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	r.Use(skipLogger("/healthz", "/readyz"))
 	r.Use(middleware.Recoverer)
 	r.Use(metrics.HTTPMiddleware)
 	r.Use(cors.Handler(cors.Options{
@@ -111,4 +111,23 @@ func NewRouter(app *App) http.Handler {
 	})
 
 	return r
+}
+
+// skipLogger wraps chi's request logger so health/readiness probes don't spam logs.
+func skipLogger(skipPaths ...string) func(http.Handler) http.Handler {
+	skip := make(map[string]struct{}, len(skipPaths))
+	for _, p := range skipPaths {
+		skip[p] = struct{}{}
+	}
+	logger := middleware.Logger
+	return func(next http.Handler) http.Handler {
+		logged := logger(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := skip[r.URL.Path]; ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			logged.ServeHTTP(w, r)
+		})
+	}
 }

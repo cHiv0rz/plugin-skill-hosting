@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -430,6 +431,88 @@ func TestExternalSync_ImportFromRemote_PicksUpChangedPlugin(t *testing.T) {
 	}
 	if len(calls) != 0 {
 		t.Errorf("up-to-date import should be no-op, got %d call(s)", len(calls))
+	}
+}
+
+func TestExternalSync_ImportFromRemote_RetriesAfterReconcileFailure(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+	bare := filepath.Join(root, "remote.git")
+	if _, err := runGit("", "init", "--bare", "-b", "main", bare); err != nil {
+		t.Fatalf("init bare: %v", err)
+	}
+
+	dataDir := filepath.Join(root, "data")
+	cfg := config.Config{
+		ExternalGitRemoteURL:   bare,
+		ExternalGitBranch:      "main",
+		ExternalGitAuthorName:  "marketplace",
+		ExternalGitAuthorEmail: "marketplace@local",
+	}
+	es := newExternalSync(cfg, dataDir)
+	ctx := context.Background()
+	if err := es.initialize(ctx); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if err := es.pushPlugin(ctx, "alpha", func(dir string) error {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dir, "README.md"), []byte("# alpha\n"), 0o644)
+	}); err != nil {
+		t.Fatalf("seed alpha: %v", err)
+	}
+
+	editor := filepath.Join(root, "editor")
+	if _, err := runGit("", "clone", bare, editor); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(editor, "plugins", "alpha", "README.md"), []byte("# alpha edited\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := runGitAs(editor, "Eve", "eve@test", nil, "commit", "-am", "Edit alpha"); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if _, err := runGit(editor, "push", "origin", "main"); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	var calls []string
+	firstErr := errors.New("db temporarily unavailable")
+	err := es.importFromRemote(ctx, func(_ context.Context, pluginName string, _ commitAuthor) error {
+		calls = append(calls, pluginName)
+		return firstErr
+	})
+	if err == nil {
+		t.Fatal("expected importFromRemote to return reconcile error")
+	}
+	if !strings.Contains(err.Error(), firstErr.Error()) {
+		t.Fatalf("error %q does not include reconcile failure %q", err.Error(), firstErr.Error())
+	}
+	if len(calls) != 1 || calls[0] != "alpha" {
+		t.Fatalf("first import calls = %v, want [alpha]", calls)
+	}
+
+	calls = nil
+	if err := es.importFromRemote(ctx, func(_ context.Context, pluginName string, _ commitAuthor) error {
+		calls = append(calls, pluginName)
+		return nil
+	}); err != nil {
+		t.Fatalf("second importFromRemote should retry and succeed: %v", err)
+	}
+	if len(calls) != 1 || calls[0] != "alpha" {
+		t.Fatalf("second import calls = %v, want [alpha]", calls)
+	}
+
+	calls = nil
+	if err := es.importFromRemote(ctx, func(_ context.Context, pluginName string, _ commitAuthor) error {
+		calls = append(calls, pluginName)
+		return nil
+	}); err != nil {
+		t.Fatalf("third importFromRemote: %v", err)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("third import should be up-to-date no-op, got calls %v", calls)
 	}
 }
 

@@ -256,11 +256,22 @@ func (es *externalSync) importFromRemote(ctx context.Context, reconcile func(ctx
 
 	log.Printf("external git import: reconciling %d plugin(s) from %s..%s",
 		len(affected), shortSHA(localHEAD), shortSHA(fetchHEAD))
+	var reconcileErrs []error
 	for pluginName := range affected {
 		author, _ := es.latestCommitAuthorForPath(localHEAD, fetchHEAD, "plugins/"+pluginName)
 		if err := reconcile(ctx, pluginName, author); err != nil {
 			log.Printf("external git import: plugin %q: %v", pluginName, err)
+			reconcileErrs = append(reconcileErrs, fmt.Errorf("%s: %w", pluginName, err))
 		}
+	}
+	if len(reconcileErrs) > 0 {
+		err := fmt.Errorf("reconcile external plugins: %w", errors.Join(reconcileErrs...))
+		if localHEAD != "" {
+			if rErr := es.resetToCommit(branch, localHEAD); rErr != nil {
+				return fmt.Errorf("%w; additionally failed to restore external work tree to %s: %v", err, shortSHA(localHEAD), rErr)
+			}
+		}
+		return err
 	}
 	// Plugin set may have grown or shrunk — refresh marketplace.json so the
 	// external repo remains usable as a standalone marketplace. commitAndPush
@@ -270,6 +281,16 @@ func (es *externalSync) importFromRemote(ctx context.Context, reconcile func(ctx
 		log.Printf("external git import: refresh root artefacts: %v", err)
 	} else if err := es.commitAndPush("Sync marketplace catalog"); err != nil {
 		log.Printf("external git import: push catalog refresh: %v", err)
+	}
+	return nil
+}
+
+func (es *externalSync) resetToCommit(branch, sha string) error {
+	if _, err := runGit(es.workDir, "checkout", "-B", branch, sha); err != nil {
+		return fmt.Errorf("checkout %s: %w", shortSHA(sha), err)
+	}
+	if _, err := runGit(es.workDir, "reset", "--hard", sha); err != nil {
+		return fmt.Errorf("reset %s: %w", shortSHA(sha), err)
 	}
 	return nil
 }

@@ -158,6 +158,25 @@ func TestWipeWorkTree_MissingDir(t *testing.T) {
 	}
 }
 
+func TestRemoveInternalRepo_RemovesBareAndWorkTree(t *testing.T) {
+	dir := t.TempDir()
+	a := &App{Cfg: config.Config{DataDir: dir}}
+	mustMkdir(t, a.repoPath("gone"))
+	mustWrite(t, filepath.Join(a.repoPath("gone"), "HEAD"), "ref: refs/heads/main\n")
+	mustMkdir(t, filepath.Join(a.workPath("gone"), ".git"))
+	mustWrite(t, filepath.Join(a.workPath("gone"), "README.md"), "stale")
+
+	if err := a.removeInternalRepo("gone"); err != nil {
+		t.Fatalf("removeInternalRepo: %v", err)
+	}
+	if _, err := os.Stat(a.repoPath("gone")); !os.IsNotExist(err) {
+		t.Errorf("bare repo should be removed, err=%v", err)
+	}
+	if _, err := os.Stat(a.workPath("gone")); !os.IsNotExist(err) {
+		t.Errorf("worktree should be removed, err=%v", err)
+	}
+}
+
 func TestWriteSkillFileToWorkTree_Text(t *testing.T) {
 	dir := t.TempDir()
 	f := SkillFile{Path: "scripts/run.sh", Content: "#!/bin/sh\necho hi\n"}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -134,11 +135,23 @@ func (a *App) ensureWorkTree(name string) error {
 }
 
 func (a *App) removeRepo(name string) {
-	os.RemoveAll(a.repoPath(name))
-	os.RemoveAll(a.workPath(name))
+	if err := a.removeInternalRepo(name); err != nil {
+		log.Printf("WARN: remove internal git repo %q: %v", name, err)
+	}
 	if err := a.syncExternalDeletePlugin(context.Background(), name); err != nil {
 		log.Printf("WARN: external git delete %q: %v", name, err)
 	}
+}
+
+func (a *App) removeInternalRepo(name string) error {
+	var errs []error
+	if err := os.RemoveAll(a.repoPath(name)); err != nil {
+		errs = append(errs, err)
+	}
+	if err := os.RemoveAll(a.workPath(name)); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 func (a *App) materializePlugin(ctx context.Context, p *Plugin) error {

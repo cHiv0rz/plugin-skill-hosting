@@ -160,6 +160,9 @@ func (a *App) softDeletePluginFromImport(ctx context.Context, existing *Plugin, 
 	if err != nil {
 		return err
 	}
+	if err := a.removeInternalRepo(existing.Name); err != nil {
+		return fmt.Errorf("remove internal git repo: %w", err)
+	}
 	log.Printf("external git import: soft-deleted plugin %q", existing.Name)
 	return nil
 }

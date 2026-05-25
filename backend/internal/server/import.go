@@ -51,8 +51,17 @@ func (a *App) reconcileImportedPlugin(ctx context.Context, pluginName string, au
 	dbHasPlugin := err == nil
 
 	if !pluginExists {
-		if !dbHasPlugin || existing.DeletedAt != nil {
-			return nil // never existed in DB, or already soft-deleted.
+		if !dbHasPlugin {
+			return nil
+		}
+		if existing.DeletedAt != nil {
+			// Already soft-deleted in DB; ensure the bare repo cleanup
+			// ran. removeInternalRepo is idempotent on missing paths, so
+			// retrying after a prior filesystem failure is safe.
+			if err := a.removeInternalRepo(existing.Name); err != nil {
+				return fmt.Errorf("remove internal git repo: %w", err)
+			}
+			return nil
 		}
 		return a.softDeletePluginFromImport(ctx, existing, actorID)
 	}

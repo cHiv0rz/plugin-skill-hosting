@@ -516,6 +516,94 @@ func TestExternalSync_ImportFromRemote_RetriesAfterReconcileFailure(t *testing.T
 	}
 }
 
+// TestExternalSync_ImportFromRemote_RetriesAfterReconcileFailure_UnbornHEAD
+// covers the branch where the local clone has no commits yet (rev-parse HEAD
+// fails). A reconcile failure must leave HEAD unborn — otherwise the next
+// import sees localHEAD == fetchHEAD and short-circuits as "already up to
+// date" without retrying.
+func TestExternalSync_ImportFromRemote_RetriesAfterReconcileFailure_UnbornHEAD(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+	bare := filepath.Join(root, "remote.git")
+	if _, err := runGit("", "init", "--bare", "-b", "main", bare); err != nil {
+		t.Fatalf("init bare: %v", err)
+	}
+
+	// Seed the remote with a plugin via a throwaway editor clone.
+	editor := filepath.Join(root, "editor")
+	if _, err := runGit("", "clone", bare, editor); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(editor, "plugins", "alpha"), 0o755); err != nil {
+		t.Fatalf("mkdir alpha: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(editor, "plugins", "alpha", "README.md"), []byte("# alpha\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := runGit(editor, "add", "-A"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, err := runGitAs(editor, "Eve", "eve@test", nil, "commit", "-m", "Seed alpha"); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if _, err := runGit(editor, "push", "origin", "main"); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	// Build a workDir with origin configured but no local commits, mimicking
+	// a corrupted/unborn-HEAD state where rev-parse HEAD fails.
+	dataDir := filepath.Join(root, "data")
+	cfg := config.Config{
+		ExternalGitRemoteURL:   bare,
+		ExternalGitBranch:      "main",
+		ExternalGitAuthorName:  "marketplace",
+		ExternalGitAuthorEmail: "marketplace@local",
+	}
+	es := newExternalSync(cfg, dataDir)
+	if err := os.MkdirAll(es.workDir, 0o755); err != nil {
+		t.Fatalf("mkdir workDir: %v", err)
+	}
+	if _, err := runGit(es.workDir, "init", "-b", "main"); err != nil {
+		t.Fatalf("init workDir: %v", err)
+	}
+	if _, err := runGit(es.workDir, "remote", "add", "origin", bare); err != nil {
+		t.Fatalf("remote add: %v", err)
+	}
+	if _, err := runGit(es.workDir, "rev-parse", "HEAD"); err == nil {
+		t.Fatal("test precondition: workDir HEAD should be unborn")
+	}
+
+	ctx := context.Background()
+	var calls []string
+	firstErr := errors.New("db temporarily unavailable")
+	err := es.importFromRemote(ctx, func(_ context.Context, pluginName string, _ commitAuthor) error {
+		calls = append(calls, pluginName)
+		return firstErr
+	})
+	if err == nil {
+		t.Fatal("expected importFromRemote to return reconcile error")
+	}
+	if len(calls) != 1 || calls[0] != "alpha" {
+		t.Fatalf("first import calls = %v, want [alpha]", calls)
+	}
+	// HEAD must be unborn again so the next import doesn't see it as
+	// equal to fetchHEAD.
+	if _, err := runGit(es.workDir, "rev-parse", "HEAD"); err == nil {
+		t.Fatal("HEAD should be unborn again after rollback")
+	}
+
+	calls = nil
+	if err := es.importFromRemote(ctx, func(_ context.Context, pluginName string, _ commitAuthor) error {
+		calls = append(calls, pluginName)
+		return nil
+	}); err != nil {
+		t.Fatalf("second importFromRemote should retry and succeed: %v", err)
+	}
+	if len(calls) != 1 || calls[0] != "alpha" {
+		t.Fatalf("second import calls = %v, want [alpha] — short-circuit means rollback didn't restore unborn HEAD", calls)
+	}
+}
+
 // TestExternalSync_ImportFromRemote_HandlesDeletion confirms a plugin
 // deletion (subdir removed externally) propagates to the reconcile callback,
 // which is then responsible for soft-deleting in DB.

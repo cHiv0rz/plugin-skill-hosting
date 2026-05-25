@@ -266,10 +266,8 @@ func (es *externalSync) importFromRemote(ctx context.Context, reconcile func(ctx
 	}
 	if len(reconcileErrs) > 0 {
 		err := fmt.Errorf("reconcile external plugins: %w", errors.Join(reconcileErrs...))
-		if localHEAD != "" {
-			if rErr := es.resetToCommit(branch, localHEAD); rErr != nil {
-				return fmt.Errorf("%w; additionally failed to restore external work tree to %s: %v", err, shortSHA(localHEAD), rErr)
-			}
+		if rErr := es.rollbackWorkTree(branch, localHEAD); rErr != nil {
+			return fmt.Errorf("%w; additionally failed to restore external work tree: %v", err, rErr)
 		}
 		return err
 	}
@@ -285,12 +283,26 @@ func (es *externalSync) importFromRemote(ctx context.Context, reconcile func(ctx
 	return nil
 }
 
-func (es *externalSync) resetToCommit(branch, sha string) error {
-	if _, err := runGit(es.workDir, "checkout", "-B", branch, sha); err != nil {
-		return fmt.Errorf("checkout %s: %w", shortSHA(sha), err)
+// rollbackWorkTree restores HEAD to originalHEAD after a failed import. When
+// originalHEAD is "" (the import started against an unborn HEAD), the branch
+// ref is deleted and HEAD re-attached so `rev-parse HEAD` fails again on the
+// next attempt — otherwise HEAD would stay at FETCH_HEAD and the next import
+// would short-circuit as "already up to date" without retrying.
+func (es *externalSync) rollbackWorkTree(branch, originalHEAD string) error {
+	if originalHEAD == "" {
+		if _, err := runGit(es.workDir, "update-ref", "-d", "refs/heads/"+branch); err != nil {
+			return fmt.Errorf("delete branch %s: %w", branch, err)
+		}
+		if _, err := runGit(es.workDir, "symbolic-ref", "HEAD", "refs/heads/"+branch); err != nil {
+			return fmt.Errorf("re-attach HEAD to %s: %w", branch, err)
+		}
+		return nil
 	}
-	if _, err := runGit(es.workDir, "reset", "--hard", sha); err != nil {
-		return fmt.Errorf("reset %s: %w", shortSHA(sha), err)
+	if _, err := runGit(es.workDir, "checkout", "-B", branch, originalHEAD); err != nil {
+		return fmt.Errorf("checkout %s: %w", shortSHA(originalHEAD), err)
+	}
+	if _, err := runGit(es.workDir, "reset", "--hard", originalHEAD); err != nil {
+		return fmt.Errorf("reset %s: %w", shortSHA(originalHEAD), err)
 	}
 	return nil
 }

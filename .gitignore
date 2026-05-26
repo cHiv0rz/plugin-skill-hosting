@@ -1,6 +1,7 @@
 .env
 backend/server
 backend/marketplace
+backend/import-plugin
 backend/data/
 backend/.idea/
 node_modules/

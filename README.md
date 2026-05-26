@@ -365,6 +365,29 @@ description: One-line summary Claude uses to decide when to apply this skill
 …body markdown…
 ```
 
+## Importing an existing plugin
+
+A small Go CLI at [`backend/cmd/import-plugin`](backend/cmd/import-plugin) uploads an on-disk plugin directory into a running marketplace via the REST API. It accepts any directory that follows the layout above — including the output of `git clone` against another instance — so it works for one-off migrations between servers or for seeding a fresh marketplace from a local checkout.
+
+```bash
+cd backend
+go build -o import-plugin ./cmd/import-plugin
+
+MARKETPLACE_URL=https://your-host \
+MARKETPLACE_TOKEN=<copy-from-the-home-page> \
+./import-plugin ./path/to/my-plugin
+```
+
+What it does:
+
+1. Reads `<dir>/.claude-plugin/plugin.json` and `POST`s the metadata (name, description, author, homepage, license) to `/api/plugins`. The server assigns the version.
+2. For each `skills/<name>/` subdirectory, zips it in memory and `POST`s to `/api/plugins/{name}/skills/import` — the same endpoint the web UI's "Import skill" button uses, so the server handles SKILL.md parsing, supporting-file validation, binary detection, and the version snapshot.
+3. The plugin's bare git repo is materialised after the last skill lands, so `git clone` and the marketplace feed pick up the new entry immediately.
+
+The tool is intentionally not idempotent: if a plugin with the same name already exists, the create call fails with `409 plugin name already taken` and the importer aborts before touching any skills. Delete the existing plugin (or rename the incoming one) and re-run.
+
+`--url` / `--token` flags override the env vars if both are set.
+
 ## What this is *not*
 
 - A SaaS product with clear tenant separation — it is a single-tenant sharing platform for one organization, with no isolation between users

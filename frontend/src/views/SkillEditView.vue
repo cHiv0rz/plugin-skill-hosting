@@ -79,6 +79,11 @@ const SEVERITY_ORDER: Record<FindingSeverity, number> = {
   info: 2,
 }
 
+const selectedFileIsMarkdown = computed(() => {
+  const p = selectedPath.value
+  return !!p && /\.md$/i.test(p)
+})
+
 const sortedFindings = computed(() => {
   if (!validationReport.value) return []
   return [...validationReport.value.findings].sort(
@@ -575,8 +580,16 @@ watch(() => props.skillName, load)
           <ErrorAlert v-else-if="fileError" :message="fileError" />
 
           <template v-else>
+            <div
+              v-if="!fileIsBinary && selectedFileIsMarkdown"
+              class="se-pane__md"
+              @input="fileDirty = true"
+              @keydown="fileDirty = true"
+            >
+              <MarkdownEditor v-model="fileContent" />
+            </div>
             <textarea
-              v-if="!fileIsBinary"
+              v-else-if="!fileIsBinary"
               v-model="fileContent"
               class="se-pane__editor"
               spellcheck="false"

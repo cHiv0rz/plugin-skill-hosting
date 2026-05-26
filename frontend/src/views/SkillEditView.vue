@@ -7,8 +7,8 @@ import { useConfirm } from '../composables/useConfirm'
 import {
   useSkillFileManager,
   fmtBytes,
-  FOLDER_ORDER,
   FOLDER_HINT,
+  isWellKnownFolder,
 } from '../composables/useSkillFileManager'
 import SkillVersionHistory from '../components/SkillVersionHistory.vue'
 import ErrorAlert from '../components/ErrorAlert.vue'
@@ -55,9 +55,8 @@ const {
   fileDirty,
   fileError,
   filesByFolder,
-  scriptsInput,
-  referencesInput,
-  assetsInput,
+  folderList,
+  uploadInput,
   loadFiles,
   selectFile,
   saveCurrentFile,
@@ -500,12 +499,8 @@ watch(() => props.skillName, load)
 
     <!-- FILES tab (edit mode only) -->
     <div v-else-if="tab === 'more'" class="se-files">
-      <input ref="scriptsInput" type="file" multiple hidden
-             @change="onUploadChange('scripts', $event)" />
-      <input ref="referencesInput" type="file" multiple hidden
-             @change="onUploadChange('references', $event)" />
-      <input ref="assetsInput" type="file" multiple hidden
-             @change="onUploadChange('assets', $event)" />
+      <input ref="uploadInput" type="file" multiple hidden
+             @change="onUploadChange($event)" />
 
       <aside class="se-tree">
         <p class="se-tree__intro">
@@ -514,7 +509,7 @@ watch(() => props.skillName, load)
         <ErrorAlert v-if="!selectedPath && fileError" :message="fileError" />
 
         <div
-          v-for="folder in FOLDER_ORDER"
+          v-for="folder in folderList"
           :key="folder"
           class="se-tree__group"
           @dragover.prevent
@@ -522,9 +517,10 @@ watch(() => props.skillName, load)
         >
           <header class="se-tree__head">
             <span class="se-tree__name">{{ folder }}/</span>
-            <span class="se-tree__count">[{{ filesByFolder[folder].length }}]</span>
+            <span class="se-tree__count">[{{ filesByFolder[folder]?.length ?? 0 }}]</span>
             <span class="spacer"></span>
             <button
+              v-if="isWellKnownFolder(folder)"
               type="button"
               class="se-tree__act"
               title="New file"
@@ -537,9 +533,9 @@ watch(() => props.skillName, load)
               @click="triggerUpload(folder)"
             >↑ upload</button>
           </header>
-          <p class="se-tree__hint">{{ FOLDER_HINT[folder] }}</p>
+          <p v-if="FOLDER_HINT[folder]" class="se-tree__hint">{{ FOLDER_HINT[folder] }}</p>
           <ul class="se-tree__list">
-            <li v-for="f in filesByFolder[folder]" :key="f.path">
+            <li v-for="f in filesByFolder[folder] ?? []" :key="f.path">
               <button
                 type="button"
                 class="se-tree__item"
@@ -551,7 +547,7 @@ watch(() => props.skillName, load)
                 <span class="se-tree__item-meta">{{ f.isBinary ? 'bin' : 'txt' }} · {{ fmtBytes(f.sizeBytes) }}</span>
               </button>
             </li>
-            <li v-if="filesByFolder[folder].length === 0" class="se-tree__empty">
+            <li v-if="(filesByFolder[folder]?.length ?? 0) === 0" class="se-tree__empty">
               · empty · drop files here
             </li>
           </ul>

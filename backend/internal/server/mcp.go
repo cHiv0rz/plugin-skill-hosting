@@ -136,13 +136,13 @@ type mcpUpdateSkillIn struct {
 type mcpSkillFileRefIn struct {
 	Plugin string `json:"plugin"`
 	Skill  string `json:"skill"`
-	Path   string `json:"path" jsonschema:"file path under scripts/, references/, or assets/"`
+	Path   string `json:"path" jsonschema:"file path under a top-level folder (e.g. scripts/, references/, assets/, or any custom folder name)"`
 }
 
 type mcpUpsertSkillFileIn struct {
 	Plugin   string `json:"plugin"`
 	Skill    string `json:"skill"`
-	Path     string `json:"path" jsonschema:"file path under scripts/, references/, or assets/"`
+	Path     string `json:"path" jsonschema:"file path under a top-level folder (e.g. scripts/, references/, assets/, or any custom folder name)"`
 	Content  string `json:"content" jsonschema:"raw UTF-8 text, or base64 bytes when isBinary is true"`
 	IsBinary bool   `json:"isBinary,omitempty" jsonschema:"set true to send base64-encoded binary content"`
 }
@@ -504,7 +504,7 @@ func (a *App) addToolUpsertSkillFile(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "upsert_skill_file",
 		Title:       "Create or update skill file",
-		Description: "Write a supporting file (under scripts/, references/, or assets/). Bumps the plugin patch version and rewrites the git repo.",
+		Description: "Write a supporting file. Conventional folders are scripts/, references/, and assets/; arbitrary top-level folder names are also accepted. Bumps the plugin patch version and rewrites the git repo.",
 	}, instrumentMCP("upsert_skill_file", func(ctx context.Context, _ *mcp.CallToolRequest, in mcpUpsertSkillFileIn) (*mcp.CallToolResult, mcpStatusOut, error) {
 		var zero mcpStatusOut
 		user := userFromCtx(ctx)

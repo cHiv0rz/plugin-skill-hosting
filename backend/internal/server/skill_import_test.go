@@ -247,13 +247,38 @@ func TestExtractSkillZip_RejectsMissingSkillMd(t *testing.T) {
 	}
 }
 
-func TestExtractSkillZip_RejectsBadPath(t *testing.T) {
+func TestExtractSkillZip_AcceptsArbitraryFolders(t *testing.T) {
+	// Folder names outside the conventional scripts/references/assets trio are
+	// accepted — the marketplace stores whatever folder the user chooses via
+	// the API or import. evals/ is still dropped explicitly (see
+	// unsupportedSkillRoots) but other names flow through.
 	data := buildZip(t, map[string]string{
-		"SKILL.md":     "---\nname: x\ndescription: y\n---\nbody\n",
-		"random/x.txt": "nope\n",
+		"SKILL.md":      "---\nname: x\ndescription: y\n---\nbody\n",
+		"random/x.txt":  "ok\n",
+		"docs/notes.md": "ok\n",
+	})
+	parsed, err := extractSkillZip(data)
+	if err != nil {
+		t.Fatalf("extractSkillZip: %v", err)
+	}
+	paths := map[string]bool{}
+	for _, f := range parsed.Files {
+		paths[f.Path] = true
+	}
+	if !paths["random/x.txt"] || !paths["docs/notes.md"] {
+		t.Errorf("expected arbitrary folders to be kept, got %+v", parsed.Files)
+	}
+}
+
+func TestExtractSkillZip_RejectsBadChars(t *testing.T) {
+	// Folder names still have to pass the segment regex: no spaces or exotic
+	// characters that would round-trip badly through git or filesystem layers.
+	data := buildZip(t, map[string]string{
+		"SKILL.md":         "---\nname: x\ndescription: y\n---\nbody\n",
+		"bad folder/x.txt": "nope\n",
 	})
 	if _, err := extractSkillZip(data); err == nil {
-		t.Error("expected error when file is outside whitelisted roots")
+		t.Error("expected error when folder name contains invalid chars")
 	}
 }
 

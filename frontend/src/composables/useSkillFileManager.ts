@@ -4,14 +4,22 @@ import type { SkillFileSummary } from '../types'
 import { useConfirm } from './useConfirm'
 import { usePrompt } from './usePrompt'
 
-export type SkillFolder = 'scripts' | 'references' | 'assets'
+// A folder is the first "/"-separated segment of a SkillFile path. The 3
+// "well-known" folders below get default UI affordances (intro hint, + new
+// button). Any other folder name accepted by the backend (via the API tool)
+// is rendered too once files exist under it — see folderList computation.
+export type SkillFolder = string
 
-export const FOLDER_ORDER: SkillFolder[] = ['scripts', 'references', 'assets']
+export const FOLDER_ORDER: readonly SkillFolder[] = ['scripts', 'references', 'assets']
 
-export const FOLDER_HINT: Record<SkillFolder, string> = {
+export const FOLDER_HINT: Record<string, string> = {
   scripts: 'Code Claude can run (Python, bash, …)',
   references: 'Reference docs Claude reads on demand',
   assets: 'Templates, fonts, icons used in output',
+}
+
+export function isWellKnownFolder(folder: string): boolean {
+  return folder in FOLDER_HINT
 }
 
 export const FILENAME_RE = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/
@@ -75,19 +83,32 @@ export function useSkillFileManager(
   const fileDirty = ref(false)
   const fileError = ref('')
 
-  const scriptsInput = ref<HTMLInputElement | null>(null)
-  const referencesInput = ref<HTMLInputElement | null>(null)
-  const assetsInput = ref<HTMLInputElement | null>(null)
+  // Single shared file input — when the user clicks "upload" on a folder
+  // header, triggerUpload sets pendingUploadFolder and forwards the click.
+  // Each folder used to own its own input ref; consolidating to one keeps the
+  // template simple now that folders are dynamic.
+  const uploadInput = ref<HTMLInputElement | null>(null)
+  const pendingUploadFolder = ref<string | null>(null)
 
   const filesByFolder = computed(() => {
-    const out: Record<SkillFolder, SkillFileSummary[]> = {
-      scripts: [], references: [], assets: [],
-    }
+    const out: Record<string, SkillFileSummary[]> = {}
+    for (const folder of FOLDER_ORDER) out[folder] = []
     for (const f of files.value) {
-      const root = f.path.split('/', 1)[0] as SkillFolder
-      if (out[root]) out[root].push(f)
+      const root = f.path.split('/', 1)[0]
+      if (!out[root]) out[root] = []
+      out[root].push(f)
     }
     return out
+  })
+
+  const folderList = computed<string[]>(() => {
+    const known = new Set<string>(FOLDER_ORDER)
+    const extras: string[] = []
+    for (const folder of Object.keys(filesByFolder.value)) {
+      if (!known.has(folder)) extras.push(folder)
+    }
+    extras.sort()
+    return [...FOLDER_ORDER, ...extras]
   })
 
   function requireSkill(): { plugin: string; skill: string } | null {
@@ -234,12 +255,8 @@ export function useSkillFileManager(
   }
 
   function triggerUpload(folder: SkillFolder) {
-    const inputs: Record<SkillFolder, HTMLInputElement | null> = {
-      scripts: scriptsInput.value,
-      references: referencesInput.value,
-      assets: assetsInput.value,
-    }
-    inputs[folder]?.click()
+    pendingUploadFolder.value = folder
+    uploadInput.value?.click()
   }
 
   async function uploadList(folder: SkillFolder, list: FileList) {
@@ -274,9 +291,11 @@ export function useSkillFileManager(
     if (lastPath) await selectFile(lastPath)
   }
 
-  async function onUploadChange(folder: SkillFolder, ev: Event) {
+  async function onUploadChange(ev: Event) {
     const input = ev.target as HTMLInputElement
-    if (!input.files) return
+    const folder = pendingUploadFolder.value
+    pendingUploadFolder.value = null
+    if (!input.files || !folder) return
     await uploadList(folder, input.files)
     input.value = ''
   }
@@ -308,9 +327,8 @@ export function useSkillFileManager(
     fileDirty,
     fileError,
     filesByFolder,
-    scriptsInput,
-    referencesInput,
-    assetsInput,
+    folderList,
+    uploadInput,
     loadFiles,
     clearFileSelection,
     selectFile,

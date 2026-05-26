@@ -93,6 +93,20 @@ describe('useSkillFileManager — loadFiles', () => {
     expect(api.listSkillFiles).toHaveBeenCalledWith(PLUGIN, SKILL)
   })
 
+  it('exposes arbitrary folders in folderList after the 3 defaults', async () => {
+    vi.mocked(api.listSkillFiles).mockResolvedValue([
+      { path: 'scripts/a.py', sizeBytes: 1, isBinary: false, updatedAt: '' },
+      { path: 'evals/case1.json', sizeBytes: 1, isBinary: false, updatedAt: '' },
+      { path: 'docs/notes.md', sizeBytes: 1, isBinary: false, updatedAt: '' },
+    ])
+    const { fm } = setup()
+    await fm.loadFiles()
+    expect(fm.folderList.value).toEqual(['scripts', 'references', 'assets', 'docs', 'evals'])
+    expect(fm.filesByFolder.value['evals']).toHaveLength(1)
+    expect(fm.filesByFolder.value['docs']).toHaveLength(1)
+    expect(fm.filesByFolder.value['references']).toEqual([])
+  })
+
   it('is a no-op when skillName is null (create mode)', async () => {
     const skillName = ref<string | null>(null)
     const fm = useSkillFileManager(() => PLUGIN, () => skillName.value)
@@ -259,7 +273,8 @@ describe('useSkillFileManager — uploadList', () => {
     // uploader rejects.
     const bad = makeTextFile('...', 'x')
     const input = { files: [bad] as unknown as FileList, value: 'x' } as HTMLInputElement
-    await fm.onUploadChange('scripts', { target: input } as unknown as Event)
+    fm.triggerUpload('scripts')
+    await fm.onUploadChange({ target: input } as unknown as Event)
     expect(fm.fileError.value).toContain('skipped invalid filename')
     expect(api.putSkillFile).not.toHaveBeenCalled()
     expect(input.value).toBe('')
@@ -276,7 +291,8 @@ describe('useSkillFileManager — uploadList', () => {
     const { fm } = setup()
     const renamed = makeTextFile('has space.py', 'x')
     const input = { files: [renamed] as unknown as FileList, value: 'x' } as HTMLInputElement
-    await fm.onUploadChange('scripts', { target: input } as unknown as Event)
+    fm.triggerUpload('scripts')
+    await fm.onUploadChange({ target: input } as unknown as Event)
     expect(api.putSkillFile).toHaveBeenCalledWith(PLUGIN, SKILL, 'scripts/has_space.py', {
       content: 'x', isBinary: false,
     })
@@ -294,7 +310,8 @@ describe('useSkillFileManager — uploadList', () => {
     const { fm } = setup()
     const good = makeTextFile('ok.py', 'hi')
     const input = { files: [good] as unknown as FileList, value: 'x' } as HTMLInputElement
-    await fm.onUploadChange('scripts', { target: input } as unknown as Event)
+    fm.triggerUpload('scripts')
+    await fm.onUploadChange({ target: input } as unknown as Event)
     expect(api.putSkillFile).toHaveBeenCalledWith(PLUGIN, SKILL, 'scripts/ok.py', {
       content: 'hi', isBinary: false,
     })
@@ -314,7 +331,8 @@ describe('useSkillFileManager — uploadList', () => {
     // 0xFF 0xFE 0xFD is invalid UTF-8.
     const file = makeBinaryFile('img.bin', new Uint8Array([0xff, 0xfe, 0xfd]))
     const input = { files: [file] as unknown as FileList, value: '' } as HTMLInputElement
-    await fm.onUploadChange('assets', { target: input } as unknown as Event)
+    fm.triggerUpload('assets')
+    await fm.onUploadChange({ target: input } as unknown as Event)
     expect(api.putSkillFile).toHaveBeenCalledTimes(1)
     const call = vi.mocked(api.putSkillFile).mock.calls[0]
     expect(call[3].isBinary).toBe(true)
@@ -351,11 +369,19 @@ describe('useSkillFileManager — refreshAfterRevert', () => {
 })
 
 describe('useSkillFileManager — triggerUpload', () => {
-  it('clicks the matching input ref', async () => {
+  it('clicks the shared upload input', async () => {
     const { fm } = setup()
     const click = vi.fn()
-    fm.scriptsInput.value = { click } as unknown as HTMLInputElement
+    fm.uploadInput.value = { click } as unknown as HTMLInputElement
     fm.triggerUpload('scripts')
+    expect(click).toHaveBeenCalled()
+  })
+
+  it('works for arbitrary folder names', async () => {
+    const { fm } = setup()
+    const click = vi.fn()
+    fm.uploadInput.value = { click } as unknown as HTMLInputElement
+    fm.triggerUpload('custom-folder')
     expect(click).toHaveBeenCalled()
   })
 

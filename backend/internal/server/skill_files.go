@@ -30,18 +30,13 @@ const (
 	maxSkillFileCount  = 50
 )
 
-// validSkillFileSegmentRe is applied to each "/"-separated segment after the
-// whitelisted top-level dir; it rejects path-traversal characters and exotic
-// unicode that would round-trip badly through git or filesystem layers.
+// validSkillFileSegmentRe is applied to each "/"-separated segment of a skill
+// file path; it rejects path-traversal characters and exotic unicode that
+// would round-trip badly through git or filesystem layers. The top-level
+// directory is matched by the same expression — scripts/references/assets are
+// the conventional Anthropic-skill folders, but any name passing this regex
+// (and the depth/length caps) is accepted.
 var validSkillFileSegmentRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-
-// allowedSkillFileRoots lists the only top-level directories a skill file may
-// live under. Mirrors the Anthropic skill layout (scripts/references/assets).
-var allowedSkillFileRoots = map[string]bool{
-	"scripts":    true,
-	"references": true,
-	"assets":     true,
-}
 
 // SkillFile is what the API returns when listing or fetching a single file.
 // For binary files content is base64-encoded; for text files content holds
@@ -69,7 +64,10 @@ type skillFileUpsertReq struct {
 }
 
 // validateSkillFilePath canonicalises a user-supplied path and enforces the
-// whitelist + structural rules. Returns the cleaned path on success.
+// structural rules. Returns the cleaned path on success. The top-level folder
+// may be any name passing validSkillFileSegmentRe; the UI surfaces the
+// conventional scripts/references/assets folders by default, but the API tool
+// is free to put files under arbitrary folder names.
 func validateSkillFilePath(p string) (string, error) {
 	if p == "" {
 		return "", errors.New("path is required")
@@ -86,10 +84,7 @@ func validateSkillFilePath(p string) (string, error) {
 	}
 	parts := strings.Split(cleaned, "/")
 	if len(parts) < 2 {
-		return "", errors.New("path must include a filename under scripts/, references/, or assets/")
-	}
-	if !allowedSkillFileRoots[parts[0]] {
-		return "", errors.New("top-level dir must be one of scripts/, references/, assets/")
+		return "", errors.New("path must include a top-level folder and a filename (e.g. scripts/run.sh)")
 	}
 	if len(parts) > 6 {
 		return "", errors.New("path is nested too deep (max 6 segments)")

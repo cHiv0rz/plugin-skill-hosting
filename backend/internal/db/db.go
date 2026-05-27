@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 //go:embed migrations/0001_init.sql
@@ -41,16 +42,39 @@ var migration0009 string
 //go:embed migrations/0010_user_admin.sql
 var migration0010 string
 
+// Open opens the application's *sql.DB through pgx's database/sql adapter and
+// configures it for use behind a transaction-pool PgBouncer (the deployment in
+// front of OVH Managed PG, and the common HA layout in general).
+//
+// Why pgx and not lib/pq: lib/pq splits Parse and Bind across separate
+// extended-protocol round trips. PgBouncer in transaction-pool mode is free to
+// rebind the underlying server connection between them, so the Bind lands on a
+// backend that never saw the Parse and PG returns either
+//
+//	pq: unnamed prepared statement does not exist (26000)
+//
+// or
+//
+//	pq: bind message has N result formats but query has M columns (08P01)
+//
+// pgx with QueryExecModeExec pipelines Parse+Bind+Describe+Execute+Sync into a
+// single message group so the whole exchange completes inside one PgBouncer-
+// owned transaction; there is no window where the server can be swapped.
 func Open(url string) (*sql.DB, error) {
-	db, err := sql.Open("postgres", url)
+	cfg, err := pgx.ParseConfig(url)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse db url: %w", err)
 	}
-	// Tune the pool so connections don't sit idle long enough for a fronting
-	// PgBouncer / managed-PG proxy to silently drop them. Without these,
-	// database/sql happily reuses a "good" connection whose server-side peer
-	// has already been reaped, producing intermittent "bad connection" /
-	// "EOF" / "prepared statement does not exist" errors on the next query.
+	// No statement caching and no separate Parse round-trip. Required for
+	// PgBouncer transaction pooling; harmless on a direct PG connection.
+	cfg.DefaultQueryExecMode = pgx.QueryExecModeExec
+	cfg.StatementCacheCapacity = 0
+	cfg.DescriptionCacheCapacity = 0
+
+	db := stdlib.OpenDB(*cfg)
+	// Cap idle lifetime so PgBouncer / managed-PG proxies don't hand us back a
+	// connection whose server-side peer was already reaped, and bound the
+	// pool size so a single backend can't exhaust the bouncer's client slots.
 	db.SetMaxOpenConns(20)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxIdleTime(30 * time.Second)

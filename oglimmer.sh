@@ -99,6 +99,7 @@ Build, deploy, and release plugin-skill-hosting application components.
 COMMANDS:
     build               Build and deploy components (default)
     release             Bump semver, commit, tag, then build and deploy
+    helm-push           Package and push the Helm chart to ghcr.io/oglimmer
     show                Show current frontend version
     start               Build and run backend locally in background
     stop                Stop the local backend process
@@ -172,7 +173,7 @@ parse_args() {
                 SHOW_VERSIONS=true
                 shift
                 ;;
-            start|stop|status|logs|test)
+            start|stop|status|logs|test|helm-push)
                 DEV_COMMAND="$1"
                 shift
                 return
@@ -314,6 +315,11 @@ check_prerequisites() {
         tools+=("npm" "git")
     fi
 
+    # Add tools needed for helm push
+    if [[ "$RELEASE_MODE" == true || "$DEV_COMMAND" == "helm-push" ]]; then
+        tools+=("helm" "gh")
+    fi
+
     local missing_deps=()
     for tool in "${tools[@]}"; do
         if ! command -v "$tool" >/dev/null 2>&1; then
@@ -419,13 +425,46 @@ cmd_dev_test() {
     (cd "$BACKEND_DIR" && go test ./...)
 }
 
+cmd_helm_push() {
+    local chart_dir="$SCRIPT_DIR/helm/plugin-skill-hosting"
+    local registry="ghcr.io/oglimmer"
+
+    local chart_version
+    chart_version=$(grep '^version:' "$chart_dir/Chart.yaml" | sed -E 's/version:[[:space:]]*//')
+
+    log_info "Authenticating to GHCR via gh CLI..."
+    if ! gh auth token | helm registry login ghcr.io -u "$(gh api user --jq .login)" --password-stdin; then
+        log_error "Failed to authenticate to GHCR"
+        exit 1
+    fi
+
+    log_info "Packaging Helm chart v$chart_version..."
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    trap "rm -rf '$tmp_dir'" EXIT
+
+    if ! helm package "$chart_dir" -d "$tmp_dir"; then
+        log_error "Failed to package Helm chart"
+        exit 1
+    fi
+
+    log_info "Pushing Helm chart to oci://$registry..."
+    if helm push "$tmp_dir/plugin-skill-hosting-${chart_version}.tgz" "oci://$registry"; then
+        log_success "Helm chart v$chart_version pushed to oci://$registry/plugin-skill-hosting"
+    else
+        log_error "Failed to push Helm chart"
+        exit 1
+    fi
+}
+
 execute_dev_command() {
     case "$DEV_COMMAND" in
-        start)  cmd_dev_start ;;
-        stop)   cmd_dev_stop ;;
-        status) cmd_dev_status ;;
-        logs)   cmd_dev_logs ;;
-        test)   cmd_dev_test ;;
+        start)      cmd_dev_start ;;
+        stop)       cmd_dev_stop ;;
+        status)     cmd_dev_status ;;
+        logs)       cmd_dev_logs ;;
+        test)       cmd_dev_test ;;
+        helm-push)  cmd_helm_push ;;
     esac
 }
 
@@ -696,6 +735,8 @@ execute_release() {
     git push origin "v$new_version"
 
     log_success "Release v$new_version tagged and pushed. GitHub Actions will build and publish the images."
+
+    cmd_helm_push
 }
 
 # Main execution function

@@ -183,7 +183,7 @@ func (a *App) loadActiveSkillOrRespond(w http.ResponseWriter, r *http.Request, p
 		return nil
 	}
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return nil
 	}
 	return s
@@ -223,7 +223,7 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 
 	priorSkillCount, err := a.pluginSkillCount(r.Context(), p.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
@@ -237,11 +237,11 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING id
 	`, p.ID, req.Name, req.Description, req.Body, extra, user.ID).Scan(&id)
 	if err != nil {
-		respondDBOrConflict(w, err, "skill with that name already exists")
+		respondDBOrConflict(w, r, err, "skill with that name already exists")
 		return
 	}
 	if err := a.recordSkillVersion(r.Context(), a.DB, id, "create", req.Name, req.Description, req.Body, extra, user.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	// First skill in the plugin: no version bump (the plugin's initial
@@ -249,12 +249,12 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 	// re-sort. Subsequent additions bump major.
 	if priorSkillCount == 0 {
 		if err := a.touchPluginUpdatedAt(r.Context(), p.ID); err != nil {
-			writeErr(w, http.StatusInternalServerError, "db error")
+			serverErr(w, r, err, "db error")
 			return
 		}
 	} else {
 		if err := a.bumpAndPersistPluginVersion(r.Context(), p, semver.BumpMajor); err != nil {
-			writeErr(w, http.StatusInternalServerError, "db error")
+			serverErr(w, r, err, "db error")
 			return
 		}
 	}
@@ -302,15 +302,15 @@ func (a *App) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 		                  updated_at = now(), updated_by = $4
 		WHERE id = $5
 	`, req.Description, req.Body, extra, user.ID, existing.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.recordSkillVersion(r.Context(), a.DB, existing.ID, "update", existing.Name, req.Description, req.Body, extra, user.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.bumpAndPersistPluginVersion(r.Context(), p, semver.BumpKindForSizeChange(len(existing.Body), len(req.Body))); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
@@ -337,15 +337,15 @@ func (a *App) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 		UPDATE skills SET deleted_at = now(), deleted_by = $1, updated_at = now(), updated_by = $1
 		WHERE id = $2
 	`, user.ID, existing.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.recordSkillVersion(r.Context(), a.DB, existing.ID, "delete", existing.Name, existing.Description, existing.Body, existing.ExtraFrontmatter, user.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.bumpAndPersistPluginVersion(r.Context(), p, semver.BumpMajor); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.materializePlugin(r.Context(), p); err != nil {
@@ -365,7 +365,7 @@ func (a *App) handleListDeletedSkills(w http.ResponseWriter, r *http.Request) {
 	}
 	skills, err := a.loadDeletedSkillsForPlugin(r.Context(), p.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, skills)
@@ -400,7 +400,7 @@ func (a *App) handleRestoreSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
@@ -408,15 +408,15 @@ func (a *App) handleRestoreSkill(w http.ResponseWriter, r *http.Request) {
 		UPDATE skills SET deleted_at = NULL, deleted_by = NULL, updated_at = now(), updated_by = $1
 		WHERE id = $2
 	`, user.ID, skillID); err != nil {
-		respondDBOrConflict(w, err, "an active skill with that name already exists")
+		respondDBOrConflict(w, r, err, "an active skill with that name already exists")
 		return
 	}
 	if err := a.recordSkillVersion(r.Context(), a.DB, skillID, "restore", skillName, desc, body, extra, user.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.bumpAndPersistPluginVersion(r.Context(), p, semver.BumpMajor); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.materializePlugin(r.Context(), p); err != nil {
@@ -458,7 +458,7 @@ func (a *App) handleListSkillVersions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
@@ -471,7 +471,7 @@ func (a *App) handleListSkillVersions(w http.ResponseWriter, r *http.Request) {
 		ORDER BY v.version DESC
 	`, skillID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	defer rows.Close()
@@ -481,7 +481,7 @@ func (a *App) handleListSkillVersions(w http.ResponseWriter, r *http.Request) {
 		var editedBy, editedByName sql.NullString
 		if err := rows.Scan(&v.ID, &v.SkillID, &v.Version, &v.Action, &v.Name, &v.Description, &v.Body, &v.ExtraFrontmatter,
 			&editedBy, &editedByName, &v.EditedAt); err != nil {
-			writeErr(w, http.StatusInternalServerError, "scan error")
+			serverErr(w, r, err, "scan error")
 			return
 		}
 		if editedBy.Valid {
@@ -528,7 +528,7 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
@@ -538,14 +538,14 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
 	var currentBody string
 	if err := a.DB.QueryRowContext(r.Context(),
 		`SELECT body FROM skills WHERE id = $1`, skillID).Scan(&currentBody); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
@@ -555,21 +555,21 @@ func (a *App) handleRevertSkill(w http.ResponseWriter, r *http.Request) {
 		                  deleted_at = NULL, deleted_by = NULL
 		WHERE id = $5
 	`, targetDesc, targetBody, targetExtra, user.ID, skillID); err != nil {
-		respondDBOrConflict(w, err, "an active skill with that name already exists")
+		respondDBOrConflict(w, r, err, "an active skill with that name already exists")
 		return
 	}
 	// Restore the file tree from the snapshot before recording the new version,
 	// so the new "revert" version row captures the just-restored state.
 	if err := restoreSkillFilesFromVersion(r.Context(), a.DB, skillID, targetVersionID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.recordSkillVersion(r.Context(), a.DB, skillID, "revert", skillName, targetDesc, targetBody, targetExtra, user.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.bumpAndPersistPluginVersion(r.Context(), p, semver.BumpKindForSizeChange(len(currentBody), len(targetBody))); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.materializePlugin(r.Context(), p); err != nil {

@@ -38,7 +38,7 @@ const userListSelect = `
 func (a *App) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.DB.QueryContext(r.Context(), userListSelect)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	defer rows.Close()
@@ -50,7 +50,7 @@ func (a *App) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		var approvedAt sql.NullTime
 		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Status, &u.IsAdmin, &u.CreatedAt,
 			&approvedBy, &approvedByName, &approvedAt); err != nil {
-			writeErr(w, http.StatusInternalServerError, "db error")
+			serverErr(w, r, err, "db error")
 			return
 		}
 		if approvedBy.Valid {
@@ -68,7 +68,7 @@ func (a *App) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		users = append(users, u)
 	}
 	if err := rows.Err(); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, users)
@@ -77,14 +77,15 @@ func (a *App) handleListUsers(w http.ResponseWriter, r *http.Request) {
 // transitionUser flips a target user's status, recording the approver and
 // timestamp when going to 'approved'. Returns ErrNoRows when the target
 // doesn't exist, and a generic error when the row is already in a terminal
-// state that disallows this transition.
-func (a *App) transitionUser(r *http.Request, targetID, newStatus string) (int, string) {
+// state that disallows this transition. The trailing error is non-nil only
+// for unexpected backend failures so callers can log them via serverErr.
+func (a *App) transitionUser(r *http.Request, targetID, newStatus string) (int, string, error) {
 	approver := currentUser(r)
 	if approver == nil {
-		return http.StatusUnauthorized, "missing bearer token"
+		return http.StatusUnauthorized, "missing bearer token", nil
 	}
 	if approver.ID == targetID {
-		return http.StatusBadRequest, "cannot change your own status"
+		return http.StatusBadRequest, "cannot change your own status", nil
 	}
 
 	var (
@@ -108,27 +109,29 @@ func (a *App) transitionUser(r *http.Request, targetID, newStatus string) (int, 
 		         WHERE id = $1 AND status IN ('pending', 'approved')`
 		args = []interface{}{targetID}
 	default:
-		return http.StatusInternalServerError, "unsupported transition"
+		return http.StatusInternalServerError, "unsupported transition", nil
 	}
 
 	res, err := a.DB.ExecContext(r.Context(), query, args...)
 	if err != nil {
-		return http.StatusInternalServerError, "db error"
+		return http.StatusInternalServerError, "db error", err
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return http.StatusInternalServerError, "db error"
+		return http.StatusInternalServerError, "db error", err
 	}
 	if n == 0 {
 		var exists bool
 		if e := a.DB.QueryRowContext(r.Context(),
 			`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, targetID,
-		).Scan(&exists); e != nil || !exists {
-			return http.StatusNotFound, "user not found"
+		).Scan(&exists); e != nil {
+			return http.StatusInternalServerError, "db error", e
+		} else if !exists {
+			return http.StatusNotFound, "user not found", nil
 		}
-		return http.StatusConflict, "user is not in a state that can be " + newStatus
+		return http.StatusConflict, "user is not in a state that can be " + newStatus, nil
 	}
-	return 0, ""
+	return 0, "", nil
 }
 
 func (a *App) handleApproveUser(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +140,12 @@ func (a *App) handleApproveUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	if status, msg := a.transitionUser(r, id, UserStatusApproved); status != 0 {
+	status, msg, err := a.transitionUser(r, id, UserStatusApproved)
+	if err != nil {
+		serverErr(w, r, err, msg)
+		return
+	}
+	if status != 0 {
 		writeErr(w, status, msg)
 		return
 	}
@@ -150,7 +158,12 @@ func (a *App) handleRejectUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	if status, msg := a.transitionUser(r, id, UserStatusRejected); status != 0 {
+	status, msg, err := a.transitionUser(r, id, UserStatusRejected)
+	if err != nil {
+		serverErr(w, r, err, msg)
+		return
+	}
+	if status != 0 {
 		writeErr(w, status, msg)
 		return
 	}
@@ -177,7 +190,7 @@ func (a *App) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if status != UserStatusRejected {
@@ -189,7 +202,7 @@ func (a *App) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if err := a.DB.QueryRowContext(r.Context(),
 		`SELECT COUNT(*) FROM plugins WHERE owner_id = $1`, id,
 	).Scan(&pluginCount); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if pluginCount > 0 {
@@ -201,7 +214,7 @@ func (a *App) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if _, err := a.DB.ExecContext(r.Context(),
 		`DELETE FROM users WHERE id = $1 AND status = 'rejected'`, id,
 	); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -211,38 +224,41 @@ func (a *App) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 // so an admin can't accidentally orphan their own access, and so the "last
 // admin standing" cannot demote themselves into a lockout. Only acts on
 // approved users — pending/rejected accounts must first be approved.
-func (a *App) setAdmin(r *http.Request, targetID string, makeAdmin bool) (int, string) {
+//
+// Returns a trailing error for unexpected backend failures so callers can
+// log via serverErr; expected outcomes (conflict, not-found) leave it nil.
+func (a *App) setAdmin(r *http.Request, targetID string, makeAdmin bool) (int, string, error) {
 	actor := currentUser(r)
 	if actor == nil {
-		return http.StatusUnauthorized, "missing bearer token"
+		return http.StatusUnauthorized, "missing bearer token", nil
 	}
 	if actor.ID == targetID {
-		return http.StatusBadRequest, "cannot change your own admin status"
+		return http.StatusBadRequest, "cannot change your own admin status", nil
 	}
 
 	res, err := a.DB.ExecContext(r.Context(),
 		`UPDATE users SET is_admin = $1 WHERE id = $2 AND status = 'approved'`,
 		makeAdmin, targetID)
 	if err != nil {
-		return http.StatusInternalServerError, "db error"
+		return http.StatusInternalServerError, "db error", err
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return http.StatusInternalServerError, "db error"
+		return http.StatusInternalServerError, "db error", err
 	}
 	if n == 0 {
 		var status string
 		err := a.DB.QueryRowContext(r.Context(),
 			`SELECT status FROM users WHERE id = $1`, targetID).Scan(&status)
 		if err == sql.ErrNoRows {
-			return http.StatusNotFound, "user not found"
+			return http.StatusNotFound, "user not found", nil
 		}
 		if err != nil {
-			return http.StatusInternalServerError, "db error"
+			return http.StatusInternalServerError, "db error", err
 		}
-		return http.StatusConflict, "only approved users can be promoted or demoted"
+		return http.StatusConflict, "only approved users can be promoted or demoted", nil
 	}
-	return 0, ""
+	return 0, "", nil
 }
 
 func (a *App) handlePromoteUser(w http.ResponseWriter, r *http.Request) {
@@ -251,7 +267,12 @@ func (a *App) handlePromoteUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	if status, msg := a.setAdmin(r, id, true); status != 0 {
+	status, msg, err := a.setAdmin(r, id, true)
+	if err != nil {
+		serverErr(w, r, err, msg)
+		return
+	}
+	if status != 0 {
 		writeErr(w, status, msg)
 		return
 	}
@@ -264,7 +285,12 @@ func (a *App) handleDemoteUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	if status, msg := a.setAdmin(r, id, false); status != 0 {
+	status, msg, err := a.setAdmin(r, id, false)
+	if err != nil {
+		serverErr(w, r, err, msg)
+		return
+	}
+	if status != 0 {
 		writeErr(w, status, msg)
 		return
 	}

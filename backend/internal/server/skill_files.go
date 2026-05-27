@@ -223,7 +223,7 @@ func (a *App) handleListSkillFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	files, err := a.loadSkillFileSummaries(r.Context(), s.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, files)
@@ -249,7 +249,7 @@ func (a *App) handleGetSkillFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, f)
@@ -288,7 +288,7 @@ func (a *App) handleUpsertSkillFile(w http.ResponseWriter, r *http.Request) {
 
 	priorTotal, priorCount, err := a.skillTotalBytes(r.Context(), s.ID, pth)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if priorTotal+len(data) > maxSkillTotalBytes {
@@ -301,7 +301,7 @@ func (a *App) handleUpsertSkillFile(w http.ResponseWriter, r *http.Request) {
 	if _, err := a.loadSingleSkillFile(r.Context(), s.ID, pth); err == sql.ErrNoRows {
 		exists = false
 	} else if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if !exists && priorCount+1 > maxSkillFileCount {
@@ -327,16 +327,16 @@ func (a *App) handleUpsertSkillFile(w http.ResponseWriter, r *http.Request) {
 			size_bytes = EXCLUDED.size_bytes,
 			updated_at = now()
 	`, s.ID, pth, contentText, contentBlob, isBinary, len(data)); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
 	if err := a.recordSkillVersion(r.Context(), a.DB, s.ID, "update", s.Name, s.Description, s.Body, s.ExtraFrontmatter, user.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.bumpAndPersistPluginVersion(r.Context(), p, semver.BumpPatch); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.materializePlugin(r.Context(), p); err != nil {
@@ -346,7 +346,7 @@ func (a *App) handleUpsertSkillFile(w http.ResponseWriter, r *http.Request) {
 
 	f, err := a.loadSingleSkillFile(r.Context(), s.ID, pth)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	metrics.SkillFileMutationsTotal.WithLabelValues("upsert", "success").Inc()
@@ -372,7 +372,7 @@ func (a *App) handleDeleteSkillFile(w http.ResponseWriter, r *http.Request) {
 	res, err := a.DB.ExecContext(r.Context(),
 		`DELETE FROM skill_files WHERE skill_id = $1 AND path = $2`, s.ID, pth)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
@@ -381,11 +381,11 @@ func (a *App) handleDeleteSkillFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.recordSkillVersion(r.Context(), a.DB, s.ID, "update", s.Name, s.Description, s.Body, s.ExtraFrontmatter, user.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.bumpAndPersistPluginVersion(r.Context(), p, semver.BumpPatch); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.materializePlugin(r.Context(), p); err != nil {

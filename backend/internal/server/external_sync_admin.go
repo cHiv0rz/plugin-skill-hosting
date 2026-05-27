@@ -24,7 +24,7 @@ func (a *App) handleAdminSyncOut(w http.ResponseWriter, r *http.Request) {
 	}
 	plugins, err := a.queryPlugins(r.Context(), `WHERE p.deleted_at IS NULL ORDER BY p.name ASC`)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	report := syncOutReport{

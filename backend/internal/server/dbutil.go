@@ -17,11 +17,13 @@ func isUniqueViolation(err error) bool {
 }
 
 // respondDBOrConflict maps a write error to either 409 (unique violation,
-// using the supplied conflict message) or a generic 500.
-func respondDBOrConflict(w http.ResponseWriter, err error, conflictMsg string) {
+// using the supplied conflict message) or a logged 500. The non-conflict
+// branch routes through serverErr so the underlying error lands in logs
+// instead of being swallowed behind "db error".
+func respondDBOrConflict(w http.ResponseWriter, r *http.Request, err error, conflictMsg string) {
 	if isUniqueViolation(err) {
 		writeErr(w, http.StatusConflict, conflictMsg)
 		return
 	}
-	writeErr(w, http.StatusInternalServerError, "db error")
+	serverErr(w, r, err, "db error")
 }

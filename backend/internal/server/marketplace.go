@@ -61,7 +61,7 @@ func (a *App) handleMarketplaceJSON(w http.ResponseWriter, r *http.Request) {
 		FROM plugins p WHERE p.deleted_at IS NULL ORDER BY p.name ASC
 	`)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	defer rows.Close()
@@ -85,7 +85,7 @@ func (a *App) handleMarketplaceJSON(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var name, desc, ver, an, ae, hp, lic string
 		if err := rows.Scan(&name, &desc, &ver, &an, &ae, &hp, &lic); err != nil {
-			writeErr(w, http.StatusInternalServerError, "scan error")
+			serverErr(w, r, err, "scan error")
 			return
 		}
 		repoURL := authedBase + "/git/" + name + ".git"

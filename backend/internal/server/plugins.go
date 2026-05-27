@@ -84,7 +84,7 @@ func (a *App) handleListPlugins(w http.ResponseWriter, r *http.Request) {
 	plugins, err := a.queryPlugins(r.Context(),
 		`WHERE p.deleted_at IS NULL ORDER BY p.updated_at DESC`)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, plugins)
@@ -97,7 +97,7 @@ func (a *App) handleListDeletedPlugins(w http.ResponseWriter, r *http.Request) {
 	plugins, err := a.queryPlugins(r.Context(),
 		`WHERE p.deleted_at IS NOT NULL AND p.owner_id = $1 ORDER BY p.deleted_at DESC`, user.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, plugins)
@@ -141,7 +141,7 @@ func (a *App) loadActivePluginOrRespond(w http.ResponseWriter, r *http.Request) 
 		return nil
 	}
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return nil
 	}
 	return p
@@ -174,7 +174,7 @@ func (a *App) handleGetPlugin(w http.ResponseWriter, r *http.Request) {
 	}
 	skills, err := a.loadSkillsForPlugin(r.Context(), p.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	p.Skills = skills
@@ -211,7 +211,7 @@ func (a *App) handleCreatePlugin(w http.ResponseWriter, r *http.Request) {
 
 	version, err := a.initialPluginVersion(r.Context(), user.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
@@ -221,7 +221,7 @@ func (a *App) handleCreatePlugin(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
 	`, user.ID, req.Name, req.Description, version, req.AuthorName, req.AuthorEmail, req.Homepage, req.License).Scan(&id)
 	if err != nil {
-		respondDBOrConflict(w, err, "plugin name already taken")
+		respondDBOrConflict(w, r, err, "plugin name already taken")
 		return
 	}
 
@@ -267,12 +267,12 @@ func (a *App) handleUpdatePlugin(w http.ResponseWriter, r *http.Request) {
 		       updated_at = now()
 		 WHERE id = $6
 	`, req.Description, req.AuthorName, req.AuthorEmail, req.Homepage, req.License, p.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	updated, err := a.loadPluginByName(r.Context(), p.Name)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.materializePlugin(r.Context(), updated); err != nil {
@@ -281,7 +281,7 @@ func (a *App) handleUpdatePlugin(w http.ResponseWriter, r *http.Request) {
 	}
 	skills, err := a.loadSkillsForPlugin(r.Context(), updated.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	updated.Skills = skills
@@ -306,7 +306,7 @@ func (a *App) handleDeletePlugin(w http.ResponseWriter, r *http.Request) {
 		UPDATE plugins SET deleted_at = now(), deleted_by = $1, updated_at = now()
 		WHERE id = $2
 	`, user.ID, p.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	a.removeRepo(p.Name)
@@ -326,7 +326,7 @@ func (a *App) handleRestorePlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if p.OwnerID != user.ID {
@@ -341,13 +341,13 @@ func (a *App) handleRestorePlugin(w http.ResponseWriter, r *http.Request) {
 		UPDATE plugins SET deleted_at = NULL, deleted_by = NULL, updated_at = now()
 		WHERE id = $1
 	`, p.ID); err != nil {
-		respondDBOrConflict(w, err, "an active plugin with that name already exists")
+		respondDBOrConflict(w, r, err, "an active plugin with that name already exists")
 		return
 	}
 
 	restored, err := a.loadPluginByName(r.Context(), name)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := a.materializePlugin(r.Context(), restored); err != nil {

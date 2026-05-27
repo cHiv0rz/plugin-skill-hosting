@@ -28,7 +28,8 @@ func TestIsUniqueViolation(t *testing.T) {
 
 func TestRespondDBOrConflict_UniqueViolation(t *testing.T) {
 	rec := httptest.NewRecorder()
-	respondDBOrConflict(rec, errors.New("duplicate key"), "name already taken")
+	r := httptest.NewRequest("POST", "/api/plugins", nil)
+	respondDBOrConflict(rec, r, errors.New("duplicate key"), "name already taken")
 	if rec.Code != http.StatusConflict {
 		t.Errorf("status = %d, want 409", rec.Code)
 	}
@@ -43,7 +44,8 @@ func TestRespondDBOrConflict_UniqueViolation(t *testing.T) {
 
 func TestRespondDBOrConflict_Generic(t *testing.T) {
 	rec := httptest.NewRecorder()
-	respondDBOrConflict(rec, errors.New("connection refused"), "name already taken")
+	r := httptest.NewRequest("POST", "/api/plugins", nil)
+	respondDBOrConflict(rec, r, errors.New("connection refused"), "name already taken")
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}

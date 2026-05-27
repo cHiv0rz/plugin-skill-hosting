@@ -95,7 +95,10 @@ func TestGenerateAPIToken(t *testing.T) {
 func TestAuthenticateRequest_NoHeader(t *testing.T) {
 	a := &App{}
 	r := httptest.NewRequest("GET", "/", nil)
-	u, msg := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
 	if u != nil {
 		t.Errorf("expected nil user with no auth header, got %+v", u)
 	}
@@ -108,7 +111,10 @@ func TestAuthenticateRequest_EmptyBearer(t *testing.T) {
 	a := &App{}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Bearer ")
-	u, msg := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
 	if u != nil {
 		t.Errorf("expected nil user with empty bearer, got %+v", u)
 	}
@@ -123,7 +129,10 @@ func TestAuthenticateRequest_BadJWT(t *testing.T) {
 	a := &App{Cfg: config.Config{JWTSecret: "x"}}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Bearer not.a.jwt")
-	u, msg := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
 	if u != nil {
 		t.Errorf("expected nil user with bad JWT, got %+v", u)
 	}
@@ -137,7 +146,10 @@ func TestAuthenticateRequest_BasicWithoutPassword(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	// Username without password — Go's r.BasicAuth still parses but pass is empty.
 	r.SetBasicAuth("anything", "")
-	u, msg := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
 	if u != nil {
 		t.Errorf("expected nil user, got %+v", u)
 	}
@@ -150,7 +162,10 @@ func TestAuthenticateRequest_UnknownScheme(t *testing.T) {
 	a := &App{}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Digest something")
-	u, msg := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
 	if u != nil {
 		t.Errorf("expected nil user for unknown scheme, got %+v", u)
 	}

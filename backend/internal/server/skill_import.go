@@ -419,13 +419,13 @@ func (a *App) handleImportSkill(w http.ResponseWriter, r *http.Request) {
 
 	priorSkillCount, err := a.pluginSkillCount(r.Context(), p.ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 
 	tx, err := a.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	committed := false
@@ -440,7 +440,7 @@ func (a *App) handleImportSkill(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO skills (plugin_id, name, description, body, extra_frontmatter, created_by, updated_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING id
 	`, p.ID, parsed.Name, parsed.Description, parsed.Body, parsed.ExtraFrontmatter, user.ID).Scan(&id); err != nil {
-		respondDBOrConflict(w, err, "skill with that name already exists")
+		respondDBOrConflict(w, r, err, "skill with that name already exists")
 		return
 	}
 	for _, f := range parsed.Files {
@@ -455,28 +455,28 @@ func (a *App) handleImportSkill(w http.ResponseWriter, r *http.Request) {
 			INSERT INTO skill_files (skill_id, path, content_text, content_blob, is_binary, size_bytes)
 			VALUES ($1, $2, $3, $4, $5, $6)
 		`, id, f.Path, contentText, contentBlob, f.IsBinary, len(f.Data)); err != nil {
-			writeErr(w, http.StatusInternalServerError, "db error")
+			serverErr(w, r, err, "db error")
 			return
 		}
 	}
 	if err := a.recordSkillVersion(r.Context(), tx, id, "create", parsed.Name, parsed.Description, parsed.Body, parsed.ExtraFrontmatter, user.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db error")
+		serverErr(w, r, err, "db error")
 		return
 	}
 	committed = true
 
 	if priorSkillCount == 0 {
 		if err := a.touchPluginUpdatedAt(r.Context(), p.ID); err != nil {
-			writeErr(w, http.StatusInternalServerError, "db error")
+			serverErr(w, r, err, "db error")
 			return
 		}
 	} else {
 		if err := a.bumpAndPersistPluginVersion(r.Context(), p, semver.BumpMajor); err != nil {
-			writeErr(w, http.StatusInternalServerError, "db error")
+			serverErr(w, r, err, "db error")
 			return
 		}
 	}

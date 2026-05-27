@@ -6,10 +6,13 @@ package server
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"regexp"
 	"sync/atomic"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
 
 	"marketplace/internal/config"
 )
@@ -123,4 +126,16 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// serverErr logs the underlying error tagged with the chi request ID, method,
+// and route pattern, then responds with a generic 500 JSON body so internal
+// detail doesn't leak to clients. Use this anywhere a 500 is returned because
+// of an unexpected failure (DB, IO, encoding, …) — silent "db error" replies
+// were the main reason intermittent PgBouncer / network errors couldn't be
+// triaged from kubectl logs.
+func serverErr(w http.ResponseWriter, r *http.Request, err error, publicMsg string) {
+	log.Printf("ERROR reqID=%s %s %s: %s: %v",
+		middleware.GetReqID(r.Context()), r.Method, r.URL.Path, publicMsg, err)
+	writeErr(w, http.StatusInternalServerError, publicMsg)
 }

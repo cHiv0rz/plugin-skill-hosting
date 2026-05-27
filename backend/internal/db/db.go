@@ -46,6 +46,15 @@ func Open(url string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Tune the pool so connections don't sit idle long enough for a fronting
+	// PgBouncer / managed-PG proxy to silently drop them. Without these,
+	// database/sql happily reuses a "good" connection whose server-side peer
+	// has already been reaped, producing intermittent "bad connection" /
+	// "EOF" / "prepared statement does not exist" errors on the next query.
+	db.SetMaxOpenConns(20)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxIdleTime(30 * time.Second)
+	db.SetConnMaxLifetime(5 * time.Minute)
 	for i := 0; i < 30; i++ {
 		if err = db.Ping(); err == nil {
 			return db, nil

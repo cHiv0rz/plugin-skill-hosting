@@ -54,25 +54,63 @@ type Report struct {
 	SuggestedDescription string    `json:"suggestedDescription,omitempty"`
 }
 
+// FixSystemPrompt is the rubric for the per-finding fix call. The model gets
+// the original draft plus one specific finding and must return a minimal patch
+// targeting just that finding.
+const FixSystemPrompt = `You are an expert reviewer of Claude Code agent skills. The user will show you a skill draft and ONE specific finding from a prior review. Your job is to produce a minimal patch that resolves that ONE finding without altering anything else.
+
+Your entire response must be a single JSON object and nothing else — no leading text, no trailing text, no Markdown, no code fences. The very first character of your output must be "{" and the very last character must be "}". Match exactly this schema:
+
+{
+  "name": "rewritten slug (OMIT this key entirely if name should not change)",
+  "description": "rewritten description (OMIT this key entirely if description should not change)",
+  "body": "rewritten full body markdown (OMIT this key entirely if body should not change)",
+  "extraFrontmatter": "rewritten YAML frontmatter lines (OMIT this key entirely if extra frontmatter should not change)",
+  "note": "one short sentence explaining what you changed (always include)"
+}
+
+Rules:
+- Only include keys for fields you are actually changing. Omit any field you are not modifying.
+- When you DO include a field, return the COMPLETE rewritten value — the frontend replaces the field wholesale, not as a diff.
+- Address ONLY the finding you are given. Do not refactor unrelated parts of the skill.
+- Prefer the smallest edit that resolves the finding.
+- The skill name is a lowercase slug (letters, digits, hyphens). Only change it if the finding explicitly concerns the name.`
+
+// Fix is the JSON patch returned by the per-finding fix endpoint. Each field
+// is a pointer so we can distinguish "no change" (nil) from "set to empty
+// string" (non-nil empty), e.g. clearing extraFrontmatter.
+type Fix struct {
+	Name             *string `json:"name,omitempty"`
+	Description      *string `json:"description,omitempty"`
+	Body             *string `json:"body,omitempty"`
+	ExtraFrontmatter *string `json:"extraFrontmatter,omitempty"`
+	Note             string  `json:"note,omitempty"`
+}
+
+// ParseFix extracts a Fix from a Claude response. Same tolerance rules as
+// Parse — stray whitespace, code fences, and surrounding prose are stripped.
+func ParseFix(s string) (*Fix, error) {
+	raw, err := extractJSONObject(s)
+	if err != nil {
+		return nil, err
+	}
+	var fix Fix
+	if err := json.Unmarshal(raw, &fix); err != nil {
+		return nil, err
+	}
+	return &fix, nil
+}
+
 // Parse extracts a Report from text that should be pure JSON. We tolerate
 // stray whitespace or accidental code fences and trim to the outermost
 // { ... } before unmarshalling.
 func Parse(s string) (*Report, error) {
-	s = strings.TrimSpace(s)
-	s = strings.TrimPrefix(s, "```json")
-	s = strings.TrimPrefix(s, "```")
-	s = strings.TrimSuffix(s, "```")
-	s = strings.TrimSpace(s)
-
-	start := strings.Index(s, "{")
-	end := strings.LastIndex(s, "}")
-	if start < 0 || end < 0 || end < start {
-		return nil, errors.New("no JSON object found")
+	raw, err := extractJSONObject(s)
+	if err != nil {
+		return nil, err
 	}
-	s = s[start : end+1]
-
 	var report Report
-	if err := json.Unmarshal([]byte(s), &report); err != nil {
+	if err := json.Unmarshal(raw, &report); err != nil {
 		return nil, err
 	}
 	for i, f := range report.Findings {
@@ -85,4 +123,18 @@ func Parse(s string) (*Report, error) {
 		}
 	}
 	return &report, nil
+}
+
+func extractJSONObject(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "```json")
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSuffix(s, "```")
+	s = strings.TrimSpace(s)
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start < 0 || end < 0 || end < start {
+		return nil, errors.New("no JSON object found")
+	}
+	return []byte(s[start : end+1]), nil
 }

@@ -110,6 +110,22 @@ var (
 		[]string{"result"},
 	)
 
+	ClaudeFindingFixDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "psh_claude_finding_fix_duration_seconds",
+			Help:    "Latency of /api/skills/finding-fix calls to the Claude API.",
+			Buckets: []float64{0.5, 1, 2, 5, 10, 20, 30, 60, 90},
+		},
+	)
+
+	ClaudeFindingFixTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "psh_claude_finding_fix_total",
+			Help: "Per-finding fix calls by result (success|error).",
+		},
+		[]string{"result"},
+	)
+
 	MCPToolCallsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "psh_mcp_tool_calls_total",
@@ -143,6 +159,8 @@ func init() {
 		GitMaterializeTotal,
 		ClaudeValidationDuration,
 		ClaudeValidationTotal,
+		ClaudeFindingFixDuration,
+		ClaudeFindingFixTotal,
 		MCPToolCallsTotal,
 		MCPToolCallDuration,
 	)

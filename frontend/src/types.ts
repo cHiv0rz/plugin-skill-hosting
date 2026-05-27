@@ -112,3 +112,15 @@ export interface ValidationReport {
   findings: Finding[]
   suggestedDescription?: string
 }
+
+// FindingFix is a minimal patch produced by the per-finding fix endpoint.
+// Only the fields the model decided to change are present — missing keys mean
+// "do not touch this field". An empty string IS a value (e.g. clearing
+// extraFrontmatter), so we distinguish missing from empty.
+export interface FindingFix {
+  name?: string
+  description?: string
+  body?: string
+  extraFrontmatter?: string
+  note?: string
+}

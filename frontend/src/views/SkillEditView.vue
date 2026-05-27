@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, computed, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, computed, watch, nextTick } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { api, errMsg } from '../api'
-import type { ValidationReport, FindingSeverity } from '../types'
+import type { ValidationReport, FindingSeverity, Finding } from '../types'
 import { useConfirm } from '../composables/useConfirm'
 import {
   useSkillFileManager,
@@ -38,6 +38,17 @@ const versionHistory = ref<InstanceType<typeof SkillVersionHistory> | null>(null
 const validating = ref(false)
 const validationReport = ref<ValidationReport | null>(null)
 const validationError = ref('')
+const reviewSection = ref<HTMLElement | null>(null)
+const applyStatus = ref<'idle' | 'applied'>('idle')
+let applyResetTimer: number | undefined
+
+// Per-finding apply state. Indexed by position in sortedFindings — the array
+// is stable for a given validation report, and we reset on every revalidate.
+type FixState = 'idle' | 'loading' | 'applied' | 'error'
+const fixStatus = ref<Record<number, FixState>>({})
+const fixError = ref<Record<number, string>>({})
+const fixNote = ref<Record<number, string>>({})
+const fixResetTimers = new Map<number, number>()
 
 // Tabs: SKILL = description+body editor; MORE = supporting files. Most users
 // only ever need SKILL, so we default there and keep the file tree out of
@@ -101,6 +112,72 @@ function applySuggestedDescription() {
   if (validationReport.value?.suggestedDescription) {
     description.value = validationReport.value.suggestedDescription
     markTouched()
+    applyStatus.value = 'applied'
+    if (applyResetTimer) window.clearTimeout(applyResetTimer)
+    applyResetTimer = window.setTimeout(() => { applyStatus.value = 'idle' }, 1800)
+  }
+}
+
+function resetFindingFixState() {
+  fixStatus.value = {}
+  fixError.value = {}
+  fixNote.value = {}
+  for (const id of fixResetTimers.values()) window.clearTimeout(id)
+  fixResetTimers.clear()
+}
+
+async function applyFindingFix(finding: Finding, idx: number) {
+  fixStatus.value = { ...fixStatus.value, [idx]: 'loading' }
+  fixError.value = { ...fixError.value, [idx]: '' }
+  fixNote.value = { ...fixNote.value, [idx]: '' }
+  try {
+    const fix = await api.fixFinding({
+      name: name.value,
+      description: description.value,
+      body: body.value,
+      extraFrontmatter: extraFrontmatter.value,
+      files: files.value,
+      finding,
+    })
+    let changed = false
+    // name is the directory key in edit mode — never overwrite it post-creation.
+    if (typeof fix.name === 'string' && !isEdit.value) {
+      name.value = fix.name
+      changed = true
+    }
+    if (typeof fix.description === 'string') {
+      description.value = fix.description
+      changed = true
+    }
+    if (typeof fix.body === 'string') {
+      body.value = fix.body
+      changed = true
+    }
+    if (typeof fix.extraFrontmatter === 'string') {
+      extraFrontmatter.value = fix.extraFrontmatter
+      changed = true
+    }
+    if (changed) markTouched()
+    fixStatus.value = { ...fixStatus.value, [idx]: changed ? 'applied' : 'error' }
+    if (!changed) {
+      fixError.value = { ...fixError.value, [idx]: 'no changes returned' }
+    } else if (fix.note) {
+      fixNote.value = { ...fixNote.value, [idx]: fix.note }
+    }
+    const existing = fixResetTimers.get(idx)
+    if (existing) window.clearTimeout(existing)
+    if (changed) {
+      const timer = window.setTimeout(() => {
+        if (fixStatus.value[idx] === 'applied') {
+          fixStatus.value = { ...fixStatus.value, [idx]: 'idle' }
+        }
+        fixResetTimers.delete(idx)
+      }, 2400)
+      fixResetTimers.set(idx, timer)
+    }
+  } catch (e: unknown) {
+    fixStatus.value = { ...fixStatus.value, [idx]: 'error' }
+    fixError.value = { ...fixError.value, [idx]: errMsg(e) }
   }
 }
 const audit = ref<{
@@ -267,7 +344,13 @@ async function deleteSkill() {
 async function validate() {
   validationError.value = ''
   validationReport.value = null
+  resetFindingFixState()
   validating.value = true
+  // Section becomes visible on `validating`; wait a tick then scroll so the
+  // loading state (and later the results) is in view without the user hunting
+  // for it at the bottom of the page.
+  await nextTick()
+  reviewSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   try {
     validationReport.value = await api.validateSkill({
       name: name.value,
@@ -334,7 +417,12 @@ onMounted(() => {
   window.addEventListener('beforeunload', onBeforeUnload)
   load()
 })
-onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload)
+  if (applyResetTimer) window.clearTimeout(applyResetTimer)
+  for (const id of fixResetTimers.values()) window.clearTimeout(id)
+  fixResetTimers.clear()
+})
 // Same component backs /skills/new and /skills/:name/edit, so a route change
 // (e.g. just after import) reuses the instance and skips onMounted — reload
 // explicitly when the target skill name changes.
@@ -615,13 +703,19 @@ watch(() => props.skillName, load)
     <!-- Claude review (after validate) -->
     <section
       v-if="validating || validationError || validationReport"
+      ref="reviewSection"
       class="se-section"
     >
       <header class="se-section__head">
         <span class="se-section__title">claude review</span>
       </header>
 
-      <p v-if="validating" class="se-section__loading">asking claude to review the skill…</p>
+      <div v-if="validating" class="se-progress" role="status" aria-live="polite">
+        <div class="se-progress__bar"><div class="se-progress__fill"></div></div>
+        <p class="se-progress__label">
+          asking claude to review the skill<span class="se-progress__dots" aria-hidden="true"></span>
+        </p>
+      </div>
       <ErrorAlert :message="validationError" />
 
       <template v-if="validationReport">
@@ -654,8 +748,30 @@ watch(() => props.skillName, load)
             <div class="se-finding__head">
               <span class="se-finding__sev">[{{ f.severity }}]</span>
               <span class="se-finding__title">{{ f.title }}</span>
+              <span class="spacer"></span>
+              <button
+                type="button"
+                class="se-btn se-finding__apply"
+                :class="{
+                  'se-btn--applied': fixStatus[i] === 'applied',
+                  'se-btn--loading': fixStatus[i] === 'loading',
+                }"
+                :disabled="fixStatus[i] === 'loading'"
+                @click="applyFindingFix(f, i)"
+              >
+                <template v-if="fixStatus[i] === 'loading'">
+                  applying<span class="se-progress__dots" aria-hidden="true"></span>
+                </template>
+                <template v-else-if="fixStatus[i] === 'applied'">applied ✓</template>
+                <template v-else-if="fixStatus[i] === 'error'">retry fix</template>
+                <template v-else>apply fix</template>
+              </button>
             </div>
             <p class="se-finding__detail">{{ f.detail }}</p>
+            <p v-if="fixNote[i]" class="se-finding__note">→ {{ fixNote[i] }}</p>
+            <p v-if="fixStatus[i] === 'error' && fixError[i]" class="se-finding__error">
+              fix failed: {{ fixError[i] }}
+            </p>
           </li>
         </ul>
 
@@ -664,7 +780,12 @@ watch(() => props.skillName, load)
             <div class="se-suggest__label">→ suggested description</div>
             <div class="se-suggest__text">{{ validationReport.suggestedDescription }}</div>
           </div>
-          <button type="button" class="se-btn" @click="applySuggestedDescription">apply</button>
+          <button
+            type="button"
+            class="se-btn"
+            :class="{ 'se-btn--applied': applyStatus === 'applied' }"
+            @click="applySuggestedDescription"
+          >{{ applyStatus === 'applied' ? 'applied ✓' : 'apply' }}</button>
         </div>
       </template>
     </section>
@@ -850,6 +971,14 @@ watch(() => props.skillName, load)
   color: var(--accent);
   border-color: var(--accent);
   background: transparent;
+}
+
+.se-btn--applied,
+.se-btn--applied:hover {
+  color: var(--bg);
+  background: var(--success);
+  border-color: var(--success);
+  font-weight: 700;
 }
 
 /* ─── Import notice (new mode) ─────────────────────────────────── */
@@ -1339,10 +1468,51 @@ watch(() => props.skillName, load)
   text-transform: uppercase;
   color: var(--text);
 }
-.se-section__loading {
-  margin: 0;
+.se-progress {
+  margin: 4px 0 4px;
+}
+.se-progress__bar {
+  position: relative;
+  height: 3px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.se-progress__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 50%,
+    transparent 100%
+  );
+  animation: se-progress-slide 1.4s ease-in-out infinite;
+}
+@keyframes se-progress-slide {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+.se-progress__label {
+  margin: 8px 0 0;
+  font-family: var(--mono);
   font-size: 12px;
-  color: var(--muted);
+  letter-spacing: 0.02em;
+  color: var(--text-soft);
+}
+.se-progress__dots::after {
+  content: '';
+  animation: se-progress-dots 1.4s steps(4, end) infinite;
+}
+@keyframes se-progress-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
 }
 
 .se-review__summary {
@@ -1440,6 +1610,30 @@ watch(() => props.skillName, load)
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.se-finding__apply {
+  font-size: 10.5px;
+  padding: 3px 9px;
+  letter-spacing: 0.06em;
+  flex: 0 0 auto;
+}
+.se-finding__note {
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--success);
+}
+.se-finding__error {
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--rust);
+}
+.se-btn--loading {
+  color: var(--text-soft);
+  border-color: var(--accent);
 }
 
 .se-suggest {

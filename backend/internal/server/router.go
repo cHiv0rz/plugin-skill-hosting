@@ -109,6 +109,7 @@ func NewRouter(app *App) http.Handler {
 				r.Put("/plugins/{name}/skills/{skill}/files/*", app.handleUpsertSkillFile)
 				r.Delete("/plugins/{name}/skills/{skill}/files/*", app.handleDeleteSkillFile)
 				r.Post("/skills/validate", app.handleValidateSkill)
+				r.Post("/skills/finding-fix", app.handleFixFinding)
 			})
 		})
 	})

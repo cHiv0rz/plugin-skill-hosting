@@ -9,6 +9,8 @@ import type {
   User,
   UserSummary,
   ValidationReport,
+  Finding,
+  FindingFix,
 } from './types'
 
 function token(): string | null {
@@ -131,6 +133,18 @@ export const api = {
     files?: SkillFileSummary[]
   }) =>
     request<ValidationReport>(`/api/skills/validate`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  fixFinding: (data: {
+    name: string
+    description: string
+    body: string
+    extraFrontmatter?: string
+    files?: SkillFileSummary[]
+    finding: Finding
+  }) =>
+    request<FindingFix>(`/api/skills/finding-fix`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),

@@ -119,20 +119,17 @@ func clearCookie(w http.ResponseWriter, name string) {
 	})
 }
 
-func (a *App) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
-	state, err := randHex(16)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "state error")
-		return
-	}
+// initiateOIDCFlow generates a nonce, sets the OIDC state/nonce cookies, and
+// redirects the browser to the OIDC provider. The state value is caller-supplied
+// so that both the normal login path (plain hex) and the OAuth-initiated path
+// ("oauth:<key>") can share the same redirect machinery.
+func (a *App) initiateOIDCFlow(w http.ResponseWriter, r *http.Request, state string) error {
 	nonce, err := randHex(16)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "nonce error")
-		return
+		return err
 	}
 	a.setShortLivedCookie(w, oidcStateCookie, state)
 	a.setShortLivedCookie(w, oidcNonceCookie, nonce)
-
 	opts := []oauth2.AuthCodeOption{oidc.Nonce(nonce)}
 	// UI hint only: when exactly one Workspace domain is configured, ask Google
 	// to pre-filter the account chooser. Google only honours a single `hd`, so
@@ -141,8 +138,19 @@ func (a *App) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	if len(a.Cfg.AllowedGoogleWorkspaceDomains) == 1 {
 		opts = append(opts, oauth2.SetAuthURLParam("hd", a.Cfg.AllowedGoogleWorkspaceDomains[0]))
 	}
-	authURL := a.OIDC.oauth2.AuthCodeURL(state, opts...)
-	http.Redirect(w, r, authURL, http.StatusFound)
+	http.Redirect(w, r, a.OIDC.oauth2.AuthCodeURL(state, opts...), http.StatusFound)
+	return nil
+}
+
+func (a *App) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
+	state, err := randHex(16)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "state error")
+		return
+	}
+	if err := a.initiateOIDCFlow(w, r, state); err != nil {
+		writeErr(w, http.StatusInternalServerError, "oidc init error")
+	}
 }
 
 type oidcClaims struct {
@@ -166,45 +174,68 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		a.oidcFail(w, r, "missing nonce")
 		return
 	}
+
+	// Detect OAuth-initiated flow: load (and atomically consume) the pending
+	// OAuth context early so all downstream failures can redirect correctly.
+	var pending *oauthPendingRow
+	if strings.HasPrefix(stateCookie.Value, "oauth:") {
+		stateKey := strings.TrimPrefix(stateCookie.Value, "oauth:")
+		pending, err = a.loadAndDeleteOAuthPending(r.Context(), stateKey)
+		if err != nil || pending == nil {
+			a.oidcFail(w, r, "oauth session expired")
+			return
+		}
+	}
+
+	// fail routes errors to the OAuth client when in an OAuth flow, otherwise
+	// to the SPA error page.
+	fail := func(msg string) {
+		if pending != nil {
+			oauthRedirectErr(w, r, pending.RedirectURI, pending.OAuthState, "server_error", msg)
+			return
+		}
+		a.oidcFail(w, r, msg)
+	}
+
 	clearCookie(w, oidcStateCookie)
 	clearCookie(w, oidcNonceCookie)
 
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
-		a.oidcFail(w, r, errParam)
+		fail(errParam)
 		return
 	}
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		a.oidcFail(w, r, "missing code")
+		fail("missing code")
 		return
 	}
 
 	tok, err := a.OIDC.oauth2.Exchange(r.Context(), code)
 	if err != nil {
-		a.oidcFail(w, r, "token exchange failed")
+		fail("token exchange failed")
 		return
 	}
 	rawIDToken, ok := tok.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
-		a.oidcFail(w, r, "missing id_token")
+		fail("missing id_token")
 		return
 	}
 	idToken, err := a.OIDC.verifier.Verify(r.Context(), rawIDToken)
 	if err != nil {
-		a.oidcFail(w, r, "id_token verify failed")
+		fail("id_token verify failed")
 		return
 	}
 	var claims oidcClaims
 	if err := idToken.Claims(&claims); err != nil {
-		a.oidcFail(w, r, "claims parse failed")
+		fail("claims parse failed")
 		return
 	}
 	if claims.Nonce != nonceCookie.Value {
-		a.oidcFail(w, r, "nonce mismatch")
+		fail("nonce mismatch")
 		return
 	}
 	if claims.Sub == "" {
-		a.oidcFail(w, r, "missing sub claim")
+		fail("missing sub claim")
 		return
 	}
 
@@ -216,28 +247,49 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		metrics.LoginsTotal.WithLabelValues("oidc", "failure").Inc()
 		log.Printf("WARN: oidc workspace domain rejected: hd=%q email=%q sub=%q issuer=%q",
 			claims.HD, claims.Email, claims.Sub, idToken.Issuer)
+		if pending != nil {
+			oauthRedirectErr(w, r, pending.RedirectURI, pending.OAuthState, "access_denied", "workspace domain not allowed")
+			return
+		}
 		writeErr(w, http.StatusUnauthorized, "workspace domain not allowed")
 		return
 	}
 
 	user, err := a.findOrCreateOIDCUser(r.Context(), idToken.Issuer, &claims)
 	if err != nil {
-		a.oidcFail(w, r, "user provisioning failed: "+err.Error())
+		fail("user provisioning failed: " + err.Error())
 		return
 	}
 
+	metrics.LoginsTotal.WithLabelValues("oidc", "success").Inc()
+
+	if pending != nil {
+		// OAuth-initiated flow: issue an auth code and redirect back to the
+		// OAuth client's redirect_uri instead of forwarding to the SPA.
+		authCode, err := a.issueAuthCode(r.Context(), user.ID, pending.RedirectURI, pending.CodeChallenge)
+		if err != nil {
+			log.Printf("ERROR: issue auth code (oauth/oidc): %v", err)
+			oauthRedirectErr(w, r, pending.RedirectURI, pending.OAuthState, "server_error", "auth code issuance failed")
+			return
+		}
+		q := url.Values{"code": {authCode}}
+		if pending.OAuthState != "" {
+			q.Set("state", pending.OAuthState)
+		}
+		http.Redirect(w, r, pending.RedirectURI+"?"+q.Encode(), http.StatusFound)
+		return
+	}
+
+	// Normal OIDC flow: issue a session JWT and redirect to the SPA.
 	jwt, err := a.issueToken(user.ID)
 	if err != nil {
 		a.oidcFail(w, r, "token issue failed")
 		return
 	}
-
 	// Stash the raw id_token so we can present it as id_token_hint when the
 	// user later logs out. The cookie is scoped to /api/auth/oidc so it
 	// never travels with regular API calls.
 	a.setOIDCSessionCookie(w, oidcIDTokenCookie, rawIDToken)
-
-	metrics.LoginsTotal.WithLabelValues("oidc", "success").Inc()
 	userJSON, _ := json.Marshal(user)
 	frag := url.Values{}
 	frag.Set("token", jwt)

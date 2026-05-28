@@ -25,6 +25,16 @@ func (a *App) issueToken(userID string) (string, error) {
 	return t.SignedString([]byte(a.Cfg.JWTSecret))
 }
 
+func (a *App) issueShortToken(userID string, dur time.Duration) (string, error) {
+	claims := jwt.MapClaims{
+		"sub": userID,
+		"iat": time.Now().Unix(),
+		"exp": time.Now().Add(dur).Unix(),
+	}
+	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return t.SignedString([]byte(a.Cfg.JWTSecret))
+}
+
 func (a *App) parseToken(tok string) (string, error) {
 	parsed, err := jwt.Parse(tok, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {

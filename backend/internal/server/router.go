@@ -54,6 +54,12 @@ func NewRouter(app *App) http.Handler {
 		r.Mount("/mcp", app.mcpHandler())
 	})
 
+	// OAuth 2.1 endpoints — unauthenticated; credential validation is internal.
+	r.Get("/.well-known/oauth-authorization-server", app.handleOAuthMeta)
+	r.Get("/oauth/authorize", app.handleOAuthAuthorize)
+	r.Post("/oauth/authorize", app.handleOAuthAuthorizeSubmit)
+	r.Post("/oauth/token", app.handleOAuthToken)
+
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/version", app.handleVersion)
 		r.Get("/auth/config", app.handleAuthConfig)

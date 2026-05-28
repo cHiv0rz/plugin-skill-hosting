@@ -56,6 +56,14 @@ type Config struct {
 	ExternalGitBranch    string
 	ExternalGitUsername  string
 	ExternalGitToken     string
+
+	// MCPOAuthClientID / MCPOAuthClientSecret enable OAuth 2.1 Authorization
+	// Code + PKCE on the /mcp endpoint. Both must be set or both empty.
+	// MCPOAuthRedirectURIs is the allowlist of callback URIs the OAuth client
+	// may request; defaults to the two well-known Claude callback URLs.
+	MCPOAuthClientID     string
+	MCPOAuthClientSecret string
+	MCPOAuthRedirectURIs []string
 }
 
 // RequiresUserApproval reports whether new users must be approved by an
@@ -99,9 +107,17 @@ func Load() Config {
 		ExternalGitBranch:    strings.TrimSpace(getenv("EXTERNAL_GIT_BRANCH", "main")),
 		ExternalGitUsername:  getenv("EXTERNAL_GIT_USERNAME", "x-access-token"),
 		ExternalGitToken:     getenv("EXTERNAL_GIT_TOKEN", ""),
+
+		MCPOAuthClientID:     getenv("MCP_OAUTH_CLIENT_ID", ""),
+		MCPOAuthClientSecret: getenv("MCP_OAUTH_CLIENT_SECRET", ""),
+		MCPOAuthRedirectURIs: parseURIList(getenv("MCP_OAUTH_REDIRECT_URIS",
+			"https://claude.ai/api/mcp/auth_callback,https://claude.ai/api/auth/callback")),
 	}
 	if c.ExternalGitBranch == "" {
 		c.ExternalGitBranch = "main"
+	}
+	if (c.MCPOAuthClientID == "") != (c.MCPOAuthClientSecret == "") {
+		log.Fatalf("MCP_OAUTH_CLIENT_ID and MCP_OAUTH_CLIENT_SECRET must both be set or both be empty")
 	}
 	if c.AuthMode != "password" && c.AuthMode != "oidc" {
 		log.Fatalf("AUTH_MODE must be 'password' or 'oidc', got %q", c.AuthMode)
@@ -127,6 +143,23 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseURIList splits a comma-separated list of URIs, trimming whitespace.
+// Unlike parseDomainList it does NOT lowercase, because URI paths are case-sensitive.
+func parseURIList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func parseDomainList(s string) []string {

@@ -10,15 +10,16 @@ import (
 )
 
 // renderExternalMarketplaceJSON writes .claude-plugin/marketplace.json into
-// the external work tree, listing every active DB plugin with a source that
-// points at its subdirectory inside the same repo. The resulting file lets
-// the external repo be used directly as a Claude Code marketplace, e.g.
+// the external work tree, listing every active DB plugin with a "git-subdir"
+// source that points at its subdirectory inside the same repo. The resulting
+// file lets the external repo be used directly as a Claude Code marketplace,
+// e.g.
 //
 //	/plugin marketplace add https://github.com/<owner>/<repo>
 //
 // Today only GitHub and GitLab URLs produce a usable marketplace.json;
-// other providers are skipped with a no-op (Claude Code's marketplace
-// schema has no generic "git+path" source type as of this writing).
+// other providers are skipped with a no-op so we don't write a URL the
+// extractor can't normalize.
 func (a *App) renderExternalMarketplaceJSON(ctx context.Context, workDir string) error {
 	provider, repoSlug, ok := parseExternalRepoSource(a.Cfg.ExternalGitRemoteURL)
 	if !ok {
@@ -27,15 +28,16 @@ func (a *App) renderExternalMarketplaceJSON(ctx context.Context, workDir string)
 		// without manual marketplace.json maintenance.
 		return nil
 	}
+	cloneURL := "https://" + provider + ".com/" + repoSlug + ".git"
 
 	plugins, err := a.queryPlugins(ctx, `WHERE p.deleted_at IS NULL ORDER BY p.name ASC`)
 	if err != nil {
 		return err
 	}
 
-	branch := a.Cfg.ExternalGitBranch
-	if branch == "" {
-		branch = "main"
+	ref := a.Cfg.ExternalGitBranch
+	if ref == "" {
+		ref = "main"
 	}
 
 	name := a.Cfg.MarketplaceName
@@ -62,10 +64,10 @@ func (a *App) renderExternalMarketplaceJSON(ctx context.Context, workDir string)
 			Homepage:    p.Homepage,
 			License:     p.License,
 			Source: marketplaceSource{
-				Source: provider,
-				Repo:   repoSlug,
+				Source: "git-subdir",
+				URL:    cloneURL,
 				Path:   "plugins/" + p.Name,
-				Branch: branch,
+				Ref:    ref,
 			},
 		}
 		if p.AuthorName != "" || p.AuthorEmail != "" {

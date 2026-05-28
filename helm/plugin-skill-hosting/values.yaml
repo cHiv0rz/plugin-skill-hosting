@@ -151,7 +151,7 @@ mcpOAuth:
 # when a skill's risk score (0-100) reaches `alertThreshold`. Sending email
 # additionally requires the `smtp` block below to be configured.
 audit:
-  enabled: false
+  enabled: true
   interval: 24h          # Go duration: 24h (daily), 168h (weekly)
   alertThreshold: 70     # 0-100; alert when a skill's risk score >= this
   alertEmails: []        # recipients of threat alerts

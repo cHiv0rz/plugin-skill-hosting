@@ -11,11 +11,10 @@ onMounted(() => { auth.ensureMode() })
 
 const isApproved = computed(() => auth.user?.status === 'approved')
 
-// User-management UI is hidden in OIDC+hd mode (the workspace filter handles
-// membership) and for non-admin users (only admins can list/approve/reject).
-const canManageUsers = computed(() =>
-  !!auth.user?.isAdmin && (auth.mode !== 'oidc' || auth.userApprovalRequired)
-)
+// The user-management UI is available to any admin in every auth mode — even
+// OIDC+hd, where new members are auto-admitted but an admin still needs the
+// list to promote/demote other admins. Non-admins never see it.
+const canManageUsers = computed(() => !!auth.user?.isAdmin)
 
 function logout() {
   if (auth.doLogout()) return // full-page redirect already in flight

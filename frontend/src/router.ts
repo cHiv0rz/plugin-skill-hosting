@@ -92,16 +92,11 @@ router.beforeEach(async (to) => {
     if (status === 'approved' && to.path === '/pending') {
       return { path: '/' }
     }
-    // /users is admin-only, and additionally hidden in OIDC + Google Workspace
-    // mode where membership is managed by the upstream `hd` filter. ensureMode
-    // is awaited because direct deep-links can arrive before auth config has
-    // been fetched and userApprovalRequired would otherwise be unset.
-    if (to.path === '/users') {
-      await auth.ensureMode()
-      const userMgmtOn = auth.mode !== 'oidc' || auth.userApprovalRequired
-      if (!auth.user?.isAdmin || !userMgmtOn) {
-        return { path: '/' }
-      }
+    // /users is admin-only but available in every auth mode — including
+    // OIDC + Google Workspace, where an admin still needs the list to
+    // promote/demote other admins even though membership is auto-admitted.
+    if (to.path === '/users' && !auth.user?.isAdmin) {
+      return { path: '/' }
     }
     // /audit is admin-only in every auth mode (it can expose skill internals).
     if (to.path === '/audit' && !auth.user?.isAdmin) {

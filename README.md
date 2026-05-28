@@ -210,11 +210,11 @@ For other git hosts (self-hosted Gitea, Bitbucket, raw `git+ssh`), no `marketpla
 
 A scheduled background job re-evaluates **every skill for harmful or malicious behavior** — data exfiltration, destructive actions, malicious code, credential harvesting, prompt injection, deception, and supply-chain risk — using the Anthropic API. It stores a risk verdict per skill, retains history, and emails configured recipients when a skill crosses a risk threshold. Admins review results in the web UI under `/audit`.
 
-The job is **off by default** and a no-op without `ANTHROPIC_API_KEY`. Set on the backend container:
+The job is **on by default** but is a no-op without `ANTHROPIC_API_KEY` (it logs a warning and stays idle). Set `AUDIT_ENABLED=false` to turn it off entirely. Configure on the backend container:
 
 | Var | Required | Default |
 | --- | --- | --- |
-| `AUDIT_ENABLED` | yes (set to `true`) | `false` |
+| `AUDIT_ENABLED` | no (set to `false` to disable) | `true` |
 | `AUDIT_INTERVAL` | no | `24h` (Go duration; `168h` = weekly) |
 | `AUDIT_ALERT_THRESHOLD` | no | `70` (risk score 0–100) |
 | `AUDIT_ALERT_EMAILS` | for alerts | — (comma-separated recipients) |

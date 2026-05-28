@@ -15,13 +15,19 @@ import McpSection from '../components/dev/sections/McpSection.vue'
 import CliSection from '../components/dev/sections/CliSection.vue'
 import AuditSection from '../components/dev/sections/AuditSection.vue'
 import ErrorsSection from '../components/dev/sections/ErrorsSection.vue'
+import { useAuthStore } from '../stores/auth'
+
+const auth = useAuthStore()
+const isAdmin = computed(() => !!auth.user?.isAdmin)
 
 type SectionId =
   | 'overview' | 'auth' | 'rest'
   | 'marketplace' | 'git' | 'mcp' | 'cli' | 'audit' | 'errors'
 type RestTabId = 'auth' | 'account' | 'plugins' | 'skills' | 'files' | 'validator'
 
-const sections: { id: SectionId; title: string; hint: string }[] = [
+// The Security audit section documents an admin-only feature, so it is only
+// listed (and reachable) for admins. Everything else is public reference.
+const allSections: { id: SectionId; title: string; hint: string; adminOnly?: boolean }[] = [
   { id: 'overview',    title: 'Overview',        hint: 'What this server exposes' },
   { id: 'auth',        title: 'Authentication',  hint: 'JWT, API token, HTTP Basic' },
   { id: 'rest',        title: 'REST API',        hint: 'All /api/* endpoints' },
@@ -29,9 +35,10 @@ const sections: { id: SectionId; title: string; hint: string }[] = [
   { id: 'git',         title: 'Git',             hint: 'Clone over Smart HTTP' },
   { id: 'mcp',         title: 'MCP server',      hint: 'Tools at /mcp' },
   { id: 'cli',         title: 'CLI',             hint: 'Import a plugin from disk' },
-  { id: 'audit',       title: 'Security audit',  hint: 'Scheduled skill threat scan' },
+  { id: 'audit',       title: 'Security audit',  hint: 'Scheduled skill threat scan', adminOnly: true },
   { id: 'errors',      title: 'Errors',          hint: 'Status code reference' },
 ]
+const sections = computed(() => allSections.filter(s => !s.adminOnly || isAdmin.value))
 
 const restTabs: { id: RestTabId; title: string }[] = [
   { id: 'auth',      title: 'Auth' },
@@ -49,7 +56,7 @@ function parseHash() {
   const raw = (window.location.hash || '').replace(/^#/, '')
   if (!raw) return
   const [main, sub] = raw.split('/') as [SectionId, RestTabId | undefined]
-  if (sections.some(s => s.id === main)) {
+  if (sections.value.some(s => s.id === main)) {
     activeSection.value = main
     if (main === 'rest' && sub && restTabs.some(t => t.id === sub)) {
       activeRestTab.value = sub
@@ -137,7 +144,7 @@ const restTabComponent = computed(() => {
         <GitSection         v-else-if="activeSection === 'git'" />
         <McpSection         v-else-if="activeSection === 'mcp'" />
         <CliSection         v-else-if="activeSection === 'cli'" />
-        <AuditSection       v-else-if="activeSection === 'audit'" />
+        <AuditSection       v-else-if="activeSection === 'audit' && isAdmin" />
         <ErrorsSection      v-else-if="activeSection === 'errors'" />
 
         <template v-else-if="activeSection === 'rest'">

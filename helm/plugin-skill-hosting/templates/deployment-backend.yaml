@@ -152,9 +152,9 @@ spec:
               key: EXTERNAL_GIT_TOKEN
               optional: true
         {{- end }}
-        {{- if .Values.audit.enabled }}
         - name: AUDIT_ENABLED
-          value: "true"
+          value: {{ .Values.audit.enabled | quote }}
+        {{- if .Values.audit.enabled }}
         - name: AUDIT_INTERVAL
           value: {{ .Values.audit.interval | default "24h" | quote }}
         - name: AUDIT_ALERT_THRESHOLD

@@ -9,7 +9,7 @@ const levels = [
 ]
 
 const envVars = [
-  { name: 'AUDIT_ENABLED', req: 'enables the job', def: 'false' },
+  { name: 'AUDIT_ENABLED', req: 'set false to disable', def: 'true' },
   { name: 'AUDIT_INTERVAL', req: 'no', def: '24h (Go duration; 168h = weekly)' },
   { name: 'AUDIT_ALERT_THRESHOLD', req: 'no', def: '70 (0–100)' },
   { name: 'AUDIT_ALERT_EMAILS', req: 'for alerts', def: '— (comma-separated)' },

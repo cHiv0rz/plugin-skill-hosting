@@ -38,7 +38,7 @@ services:
       # Scheduled skill security audit (optional): when AUDIT_ENABLED=true and an
       # ANTHROPIC_API_KEY is set, every skill is periodically checked for harmful
       # behavior and alerts are emailed once a risk score crosses the threshold.
-      AUDIT_ENABLED: ${AUDIT_ENABLED:-false}
+      AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
       AUDIT_INTERVAL: ${AUDIT_INTERVAL:-24h}
       AUDIT_ALERT_THRESHOLD: ${AUDIT_ALERT_THRESHOLD:-70}
       AUDIT_ALERT_EMAILS: ${AUDIT_ALERT_EMAILS:-}

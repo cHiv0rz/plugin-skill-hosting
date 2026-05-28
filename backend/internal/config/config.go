@@ -134,7 +134,7 @@ func Load() Config {
 		MCPOAuthRedirectURIs: parseURIList(getenv("MCP_OAUTH_REDIRECT_URIS",
 			"https://claude.ai/api/mcp/auth_callback,https://claude.ai/api/auth/callback")),
 
-		AuditEnabled:     os.Getenv("AUDIT_ENABLED") == "true",
+		AuditEnabled:     getenv("AUDIT_ENABLED", "true") != "false",
 		AuditInterval:    parseDuration(getenv("AUDIT_INTERVAL", "24h"), 24*time.Hour),
 		AuditThreshold:   parseInt(getenv("AUDIT_ALERT_THRESHOLD", "70"), 70),
 		AuditAlertEmails: parseDomainList(getenv("AUDIT_ALERT_EMAILS", "")),

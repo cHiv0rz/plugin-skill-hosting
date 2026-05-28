@@ -130,7 +130,7 @@ const { origin, exampleToken } = useApiExamples()
 }
 .auth-badge--accent {
   background: var(--accent);
-  color: var(--bg);
+  color: var(--text);
   border-color: var(--accent);
 }
 .recommend {

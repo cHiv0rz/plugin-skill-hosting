@@ -437,15 +437,15 @@ onMounted(load)
   border-color: var(--border);
 }
 .pl-btn--primary {
-  color: var(--bg);
+  color: var(--text);
   background: var(--accent);
   border-color: var(--accent);
   font-weight: 700;
 }
 .pl-btn--primary:hover {
   color: var(--bg);
-  background: var(--accent-2);
-  border-color: var(--accent-2);
+  background: var(--text);
+  border-color: var(--text);
 }
 .pl-btn--danger {
   color: var(--rust);

@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Crepe } from '@milkdown/crepe'
 import { replaceAll } from '@milkdown/kit/utils'
 import '@milkdown/crepe/theme/common/style.css'
-import '@milkdown/crepe/theme/frame-dark.css'
+import '@milkdown/crepe/theme/frame.css'
 
 const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -152,7 +152,7 @@ function onRawInput(ev: Event) {
 .md-mode-btn::before { display: none; }
 .md-mode-btn:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 1, 97, 0.05);
   transform: none;
 }
 .md-mode-btn + .md-mode-btn {
@@ -160,7 +160,7 @@ function onRawInput(ev: Event) {
 }
 .md-mode-btn--active,
 .md-mode-btn--active:hover {
-  color: var(--bg);
+  color: var(--text);
   background: var(--accent);
 }
 .md-editor-root {

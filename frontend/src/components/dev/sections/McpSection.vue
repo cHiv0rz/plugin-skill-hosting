@@ -87,7 +87,7 @@ const tools = [
   padding: 12px 14px;
   background: var(--bg-2);
 }
-.tool--read  { border-left-color: #5ea0ff; }
+.tool--read  { border-left-color: var(--blue); }
 .tool--write { border-left-color: var(--accent); }
 
 .tool-head {

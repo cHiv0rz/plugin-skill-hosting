@@ -363,10 +363,10 @@ const restTabComponent = computed(() => {
   background: var(--text);
   border-radius: 0;
 }
-.endpoint-method.method-get    { background: #5ea0ff; }
+.endpoint-method.method-get    { background: var(--blue); }
 .endpoint-method.method-post   { background: var(--success); color: var(--bg); }
-.endpoint-method.method-put    { background: var(--accent); }
-.endpoint-method.method-delete { background: var(--rust); color: var(--text); }
+.endpoint-method.method-put    { background: var(--accent); color: var(--text); }
+.endpoint-method.method-delete { background: var(--rust); color: var(--bg); }
 
 .endpoint-path {
   font-family: var(--mono);

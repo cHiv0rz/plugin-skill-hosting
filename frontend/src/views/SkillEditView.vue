@@ -946,15 +946,15 @@ watch(() => props.skillName, load)
 }
 
 .se-btn--primary {
-  color: var(--bg);
+  color: var(--text);
   background: var(--accent);
   border-color: var(--accent);
   font-weight: 700;
 }
 .se-btn--primary:hover {
   color: var(--bg);
-  background: var(--accent-2);
-  border-color: var(--accent-2);
+  background: var(--text);
+  border-color: var(--text);
 }
 
 .se-btn--danger {
@@ -1332,17 +1332,17 @@ watch(() => props.skillName, load)
 .se-tree__item::before { display: none; content: none; }
 .se-tree__item:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.025);
+  background: rgba(0, 1, 97, 0.05);
   transform: none;
 }
 .se-tree__item--active,
 .se-tree__item--active:hover {
-  color: var(--bg);
+  color: var(--text);
   background: var(--accent);
 }
 .se-tree__item--active .se-tree__item-meta,
 .se-tree__item--active .se-tree__chev {
-  color: var(--bg);
+  color: var(--text);
 }
 .se-tree__chev {
   flex: 0 0 auto;

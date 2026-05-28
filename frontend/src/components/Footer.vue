@@ -63,7 +63,7 @@ const backendLine = computed(() => {
   margin-top: 64px;
   padding: 28px 32px 36px;
   border-top: 1px solid var(--border);
-  background: rgba(10, 12, 16, 0.6);
+  background: var(--bg-2);
   color: var(--text-soft);
   font-family: var(--mono);
   font-size: 11px;

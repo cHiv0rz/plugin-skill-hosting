@@ -137,7 +137,7 @@ async function submit() {
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.28em;
-  color: var(--accent);
+  color: var(--text);
   padding: 3px 8px;
   border: 1px solid var(--accent);
 }
@@ -191,8 +191,8 @@ async function submit() {
   padding: 9px 12px;
   font-family: var(--mono);
   font-size: 12px;
-  color: #f1c1ae;
-  background: rgba(214, 90, 49, 0.10);
+  color: #8f3115;
+  background: rgba(194, 73, 31, 0.10);
   border-left: 2px solid var(--rust);
 }
 
@@ -220,9 +220,9 @@ async function submit() {
 }
 .lv-btn::before { display: none; content: none; }
 .lv-btn:hover {
-  background: transparent;
-  color: var(--accent);
-  border-color: var(--accent);
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
   transform: none;
 }
 .lv-btn:active { transform: none; }
@@ -235,7 +235,7 @@ async function submit() {
   background: transparent;
 }
 .lv-btn--primary {
-  color: var(--bg);
+  color: var(--text);
   background: var(--accent);
   border-color: var(--accent);
   font-weight: 700;
@@ -243,8 +243,8 @@ async function submit() {
 }
 .lv-btn--primary:hover {
   color: var(--bg);
-  background: var(--accent-2);
-  border-color: var(--accent-2);
+  background: var(--text);
+  border-color: var(--text);
 }
 
 /* ─── Footer text ──────────────────────────────────────────────── */
@@ -261,7 +261,7 @@ async function submit() {
   margin-left: 4px;
   transition: color 0.12s ease;
 }
-.lv__signup-link:hover { color: var(--accent); }
+.lv__signup-link:hover { color: var(--accent-2); }
 
 .lv__sso-text {
   margin: 0 0 16px;

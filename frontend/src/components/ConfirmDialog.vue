@@ -63,7 +63,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 .confirm-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(0, 1, 40, 0.45);
   -webkit-backdrop-filter: blur(2px);
           backdrop-filter: blur(2px);
   display: flex;
@@ -74,13 +74,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 }
 .confirm-dialog {
   position: relative;
-  background: linear-gradient(180deg, rgba(20, 24, 31, 0.95), rgba(14, 17, 24, 0.95));
+  background: linear-gradient(180deg, #ffffff, #fbf6ea);
   border: 1px solid var(--border);
   border-radius: 0;
   padding: 26px 28px 22px;
   width: 100%;
   max-width: 460px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+  box-shadow: 0 24px 80px rgba(0, 1, 97, 0.28);
 }
 .confirm-dialog::before {
   content: '';

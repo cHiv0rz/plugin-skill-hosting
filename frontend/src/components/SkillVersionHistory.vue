@@ -207,7 +207,7 @@ function fmt(d?: string | null) {
   vertical-align: top;
 }
 .svh__table tbody tr:last-child td { border-bottom: 0; }
-.svh__table tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+.svh__table tbody tr:hover { background: rgba(245, 172, 17, 0.08); }
 
 .svh__ver {
   font-weight: 700;

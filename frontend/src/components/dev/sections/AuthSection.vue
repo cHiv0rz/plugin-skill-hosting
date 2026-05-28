@@ -64,6 +64,34 @@ const { origin, exampleToken } = useApiExamples()
       same JWT + API-token shape as password mode. Use
       <code>GET /api/auth/config</code> to discover which mode is active.
     </p>
+
+    <h3>OAuth 2.1 for <code>/mcp</code> (optional)</h3>
+    <p>
+      For MCP clients that perform OAuth discovery instead of accepting a static
+      bearer header — Claude.ai's remote MCP connector is the headline case — the
+      backend can expose an OAuth 2.1 Authorization Code + PKCE server scoped to
+      <code>/mcp</code>. It's disabled by default; an operator turns it on by setting
+      <code>MCP_OAUTH_CLIENT_ID</code> and <code>MCP_OAUTH_CLIENT_SECRET</code>
+      (and optionally <code>MCP_OAUTH_REDIRECT_URIS</code>) on the backend.
+    </p>
+    <p>When enabled, three endpoints come online:</p>
+    <ul class="dev-list">
+      <li><code>GET /.well-known/oauth-authorization-server</code> — RFC 8414 discovery document.</li>
+      <li><code>GET</code> / <code>POST /oauth/authorize</code> — authorization endpoint. In password mode it renders a built-in login form; in OIDC mode it redirects through the configured IdP and resumes when the user is back.</li>
+      <li><code>POST /oauth/token</code> — exchanges an authorization code for an access + refresh token, and rotates refresh tokens on subsequent calls.</li>
+    </ul>
+    <p class="muted">
+      PKCE with <code>S256</code> is required, <code>redirect_uri</code> must be an
+      exact match against the configured allowlist, and the client must authenticate
+      at the token endpoint via HTTP Basic or <code>client_secret_post</code>. Access
+      tokens are 1-hour JWTs; refresh tokens are opaque, valid 30 days, rotated on
+      use, and revoked the moment the user's account is no longer approved. There is
+      no Dynamic Client Registration — a single confidential client per deployment.
+    </p>
+    <p>
+      Static-bearer access to <code>/mcp</code> (the API token) keeps working unchanged
+      whether or not OAuth is enabled.
+    </p>
   </section>
 </template>
 

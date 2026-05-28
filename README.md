@@ -83,9 +83,37 @@ When the IdP is Google, you can pin sign-in to one or more Google Workspace doma
 
 If the list is empty, no restriction is applied and a startup warning is logged. The check is also a no-op for non-Google issuers, so generic OIDC providers (Keycloak, Auth0 dev tenants, etc.) used for local testing are unaffected.
 
+### OAuth 2.1 for MCP (optional)
+
+Some MCP clients — Claude.ai's remote MCP connector being the headline one — don't accept a static bearer header; they perform OAuth discovery and run an Authorization Code + PKCE flow. To support those clients, the backend can expose an OAuth 2.1 authorization server scoped to `/mcp`. It's disabled by default; set the two client-credential vars to turn it on:
+
+| Var | Required | Default |
+| --- | --- | --- |
+| `MCP_OAUTH_CLIENT_ID` | yes (enables OAuth) | — |
+| `MCP_OAUTH_CLIENT_SECRET` | yes (enables OAuth) | — |
+| `MCP_OAUTH_REDIRECT_URIS` | no | `https://claude.ai/api/mcp/auth_callback,https://claude.ai/api/auth/callback` |
+
+When enabled, three endpoints come online:
+
+- `GET /.well-known/oauth-authorization-server` — RFC 8414 metadata document so clients can discover the rest.
+- `GET /oauth/authorize` and `POST /oauth/authorize` — the authorization endpoint. In `AUTH_MODE=password` it renders a built-in login form; in `AUTH_MODE=oidc` it redirects through the configured OIDC provider and resumes once the user is back.
+- `POST /oauth/token` — exchanges an authorization code for an access + refresh token, and rotates refresh tokens.
+
+The flow is OAuth 2.1 strict:
+
+- **PKCE with S256 is required** — `plain` and unencoded challenges are rejected.
+- **`redirect_uri` must be an exact match** against `MCP_OAUTH_REDIRECT_URIS` (no prefix or wildcard matching).
+- **Confidential client only** — a single client is configured per deployment via the env vars; there is no Dynamic Client Registration. The client must authenticate at the token endpoint via HTTP Basic or `client_secret_post`.
+- **Tokens** — access tokens are HS256 JWTs valid for 1 hour (signed with the same `JWT_SECRET` as session tokens, so they ride the regular middleware). Refresh tokens are opaque, valid for 30 days, and rotated on each use. Both auth codes and refresh tokens are stored as SHA-256 hashes; a background sweep deletes expired rows every hour.
+- **User status is enforced at issuance and on refresh** — pending or rejected users are turned away with `access_denied` / `invalid_grant`.
+
+Once the env vars are set, point a Claude.ai remote MCP connector at `https://<your-host>/mcp` and it will discover the OAuth endpoints automatically — no token to paste. Existing static-bearer clients continue to work unchanged.
+
 ## MCP server
 
 `/mcp` is a Streamable HTTP MCP endpoint authenticated by the same per-user API token. The home page renders a copy-paste setup card with the token pre-filled. The server announces itself as `plugin-skill-hosting`; the MCP server name your client uses is up to you (the home page suggests `MARKETPLACE_NAME`).
+
+For MCP clients that prefer OAuth discovery over a static bearer header (Claude.ai's connector being the main one), see [§OAuth 2.1 for MCP](#oauth-21-for-mcp-optional) above.
 
 One-line install for Claude Code:
 

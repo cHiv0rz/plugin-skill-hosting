@@ -41,6 +41,26 @@ const tools = [
   }
 }</pre>
 
+    <h3>OAuth 2.1 (optional)</h3>
+    <p>
+      Clients that perform OAuth discovery instead of accepting a static bearer
+      header — Claude.ai's remote MCP connector being the headline case — are
+      supported when the operator sets <code>MCP_OAUTH_CLIENT_ID</code> /
+      <code>MCP_OAUTH_CLIENT_SECRET</code> on the backend. Point the client at
+      <code>{{ origin }}/mcp</code> and it will discover the endpoints below
+      automatically.
+    </p>
+    <ul class="dev-list">
+      <li><code>GET /.well-known/oauth-authorization-server</code> — RFC 8414 metadata.</li>
+      <li><code>GET</code> / <code>POST /oauth/authorize</code> — login form (password mode) or IdP redirect (OIDC mode).</li>
+      <li><code>POST /oauth/token</code> — authorization-code exchange and refresh-token rotation.</li>
+    </ul>
+    <p class="muted">
+      Authorization Code + PKCE-S256 only; exact-match redirect URIs; 1-hour access
+      tokens; 30-day rotating refresh tokens. See the
+      <a href="#auth">Authentication</a> section for the full contract.
+    </p>
+
     <h3>Tools</h3>
     <div class="tool-grid">
       <div v-for="t in tools" :key="t.name" class="tool" :class="`tool--${t.mode}`">

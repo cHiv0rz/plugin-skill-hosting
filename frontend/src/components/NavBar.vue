@@ -31,6 +31,14 @@ function logout() {
         <template v-if="isApproved">
           <RouterLink to="/plugins/new" class="btn">+ New plugin</RouterLink>
           <RouterLink
+            v-if="auth.user?.isAdmin"
+            to="/audit"
+            class="user-link"
+            title="Skill security audit"
+          >
+            audit
+          </RouterLink>
+          <RouterLink
             v-if="canManageUsers"
             to="/users"
             class="user-link"

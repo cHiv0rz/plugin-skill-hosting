@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"marketplace/internal/config"
+	"marketplace/internal/email"
 )
 
 type App struct {
@@ -26,6 +27,14 @@ type App struct {
 	// repo (GitHub/GitLab/…) on every materialize/delete. nil when the
 	// feature is disabled (Cfg.ExternalGitRemoteURL empty).
 	ExternalSync *externalSync
+
+	// Email sends outbound notifications (currently only skill-audit alerts).
+	// Its zero value is "not configured" — Send is a no-op guarded by callers.
+	Email email.Sender
+
+	// auditRunning guards against overlapping audit sweeps: a manual trigger
+	// while the scheduled sweep is in flight (or vice versa) is rejected.
+	auditRunning atomic.Bool
 
 	// ready gates the readiness probe. False while REMATERIALIZE_ON_STARTUP is
 	// running; true otherwise. Use MarkReady/IsReady to access it.

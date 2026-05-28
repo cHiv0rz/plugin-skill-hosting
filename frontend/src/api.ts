@@ -11,6 +11,7 @@ import type {
   ValidationReport,
   Finding,
   FindingFix,
+  AuditResultsResponse,
 } from './types'
 
 function token(): string | null {
@@ -68,6 +69,8 @@ export const api = {
     request<void>(`/api/users/${id}/promote`, { method: 'POST' }),
   demoteUser: (id: string) =>
     request<void>(`/api/users/${id}/demote`, { method: 'POST' }),
+  listAuditResults: () => request<AuditResultsResponse>('/api/audit/results'),
+  runAudit: () => request<{ status: string }>('/api/audit/run', { method: 'POST' }),
   listPlugins: () => request<Plugin[]>('/api/plugins'),
   getPlugin: (name: string) => request<Plugin>(`/api/plugins/${name}`),
   createPlugin: (data: Partial<Plugin>) =>

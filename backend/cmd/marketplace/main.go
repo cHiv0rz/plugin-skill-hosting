@@ -12,6 +12,7 @@ import (
 
 	"marketplace/internal/config"
 	"marketplace/internal/db"
+	"marketplace/internal/email"
 	"marketplace/internal/metrics"
 	"marketplace/internal/server"
 )
@@ -38,7 +39,18 @@ func main() {
 
 	metrics.RegisterDBStats(pool)
 
-	app := &server.App{Cfg: cfg, DB: pool}
+	app := &server.App{
+		Cfg: cfg,
+		DB:  pool,
+		Email: email.Sender{
+			Host:     cfg.SMTPHost,
+			Port:     cfg.SMTPPort,
+			Username: cfg.SMTPUsername,
+			Password: cfg.SMTPPassword,
+			From:     cfg.SMTPFrom,
+			UseTLS:   cfg.SMTPUseTLS,
+		},
+	}
 
 	if err := app.InitExternalSync(context.Background()); err != nil {
 		log.Fatalf("external git sync init: %v", err)
@@ -57,6 +69,7 @@ func main() {
 	}
 
 	app.StartOAuthGC(context.Background())
+	app.StartSkillAudit(context.Background())
 
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,

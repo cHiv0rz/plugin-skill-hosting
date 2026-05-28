@@ -45,6 +45,9 @@ var migration0010 string
 //go:embed migrations/0011_oauth.sql
 var migration0011 string
 
+//go:embed migrations/0012_skill_audit_results.sql
+var migration0012 string
+
 // Open opens the application's *sql.DB through pgx's database/sql adapter and
 // configures it for use behind a transaction-pool PgBouncer (the deployment in
 // front of OVH Managed PG, and the common HA layout in general).
@@ -124,6 +127,9 @@ func Migrate(db *sql.DB) error {
 	}
 	if _, err := db.Exec(migration0011); err != nil {
 		return fmt.Errorf("0011_oauth: %w", err)
+	}
+	if _, err := db.Exec(migration0012); err != nil {
+		return fmt.Errorf("0012_skill_audit_results: %w", err)
 	}
 	return nil
 }

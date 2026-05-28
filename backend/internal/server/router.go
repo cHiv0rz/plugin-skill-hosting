@@ -95,6 +95,8 @@ func NewRouter(app *App) http.Handler {
 					// One-shot bootstrap: push every DB plugin to the external
 					// git repo. Use when enabling external sync on a populated DB.
 					r.Post("/external-git/sync-out", app.handleAdminSyncOut)
+					r.Get("/audit/results", app.handleListAuditResults)
+					r.Post("/audit/run", app.handleRunAudit)
 				})
 				r.Get("/plugins", app.handleListPlugins)
 				r.Get("/plugins/{name}", app.handleGetPlugin)

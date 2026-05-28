@@ -6,7 +6,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -64,6 +66,25 @@ type Config struct {
 	MCPOAuthClientID     string
 	MCPOAuthClientSecret string
 	MCPOAuthRedirectURIs []string
+
+	// Skill security audit. When AuditEnabled is true and an Anthropic API key
+	// is configured, a background job re-evaluates every skill on AuditInterval
+	// for malicious/harmful behavior and stores the verdict. Results whose risk
+	// score reaches AuditThreshold (0-100) trigger an alert email to
+	// AuditAlertEmails (requires SMTP to be configured).
+	AuditEnabled     bool
+	AuditInterval    time.Duration
+	AuditThreshold   int
+	AuditAlertEmails []string
+
+	// SMTP settings for outbound notification email. Empty SMTPHost disables
+	// all email; the audit job then logs alerts instead of sending them.
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPUseTLS   bool
 }
 
 // RequiresUserApproval reports whether new users must be approved by an
@@ -112,6 +133,24 @@ func Load() Config {
 		MCPOAuthClientSecret: getenv("MCP_OAUTH_CLIENT_SECRET", ""),
 		MCPOAuthRedirectURIs: parseURIList(getenv("MCP_OAUTH_REDIRECT_URIS",
 			"https://claude.ai/api/mcp/auth_callback,https://claude.ai/api/auth/callback")),
+
+		AuditEnabled:     os.Getenv("AUDIT_ENABLED") == "true",
+		AuditInterval:    parseDuration(getenv("AUDIT_INTERVAL", "24h"), 24*time.Hour),
+		AuditThreshold:   parseInt(getenv("AUDIT_ALERT_THRESHOLD", "70"), 70),
+		AuditAlertEmails: parseDomainList(getenv("AUDIT_ALERT_EMAILS", "")),
+
+		SMTPHost:     strings.TrimSpace(getenv("SMTP_HOST", "")),
+		SMTPPort:     parseInt(getenv("SMTP_PORT", "587"), 587),
+		SMTPUsername: getenv("SMTP_USERNAME", ""),
+		SMTPPassword: getenv("SMTP_PASSWORD", ""),
+		SMTPFrom:     strings.TrimSpace(getenv("SMTP_FROM", "")),
+		SMTPUseTLS:   getenv("SMTP_USE_TLS", "true") == "true",
+	}
+	if c.AuditThreshold < 0 {
+		c.AuditThreshold = 0
+	}
+	if c.AuditThreshold > 100 {
+		c.AuditThreshold = 100
 	}
 	if c.ExternalGitBranch == "" {
 		c.ExternalGitBranch = "main"
@@ -136,6 +175,35 @@ func Load() Config {
 		log.Printf("WARN: AUTH_MODE=oidc but OIDC_GOOGLE_WORKSPACE_DOMAINS is empty — Google Workspace domain restriction is disabled")
 	}
 	return c
+}
+
+// parseDuration parses a Go duration string (e.g. "24h", "168h", "30m"),
+// falling back to def on empty or invalid input.
+func parseDuration(s string, def time.Duration) time.Duration {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return def
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		log.Printf("WARN: invalid duration %q, using %s", s, def)
+		return def
+	}
+	return d
+}
+
+// parseInt parses a base-10 integer, falling back to def on empty or invalid input.
+func parseInt(s string, def int) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		log.Printf("WARN: invalid integer %q, using %d", s, def)
+		return def
+	}
+	return n
 }
 
 func getenv(key, fallback string) string {

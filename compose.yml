@@ -35,6 +35,19 @@ services:
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      # Scheduled skill security audit (optional): when AUDIT_ENABLED=true and an
+      # ANTHROPIC_API_KEY is set, every skill is periodically checked for harmful
+      # behavior and alerts are emailed once a risk score crosses the threshold.
+      AUDIT_ENABLED: ${AUDIT_ENABLED:-false}
+      AUDIT_INTERVAL: ${AUDIT_INTERVAL:-24h}
+      AUDIT_ALERT_THRESHOLD: ${AUDIT_ALERT_THRESHOLD:-70}
+      AUDIT_ALERT_EMAILS: ${AUDIT_ALERT_EMAILS:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       # External git mirror (optional): when EXTERNAL_GIT_REMOTE_URL is set the
       # marketplace is one-way mirrored to that single repo on every change.
       EXTERNAL_GIT_REMOTE_URL: ${EXTERNAL_GIT_REMOTE_URL:-}

@@ -13,11 +13,12 @@ import MarketplaceSection from '../components/dev/sections/MarketplaceSection.vu
 import GitSection from '../components/dev/sections/GitSection.vue'
 import McpSection from '../components/dev/sections/McpSection.vue'
 import CliSection from '../components/dev/sections/CliSection.vue'
+import AuditSection from '../components/dev/sections/AuditSection.vue'
 import ErrorsSection from '../components/dev/sections/ErrorsSection.vue'
 
 type SectionId =
   | 'overview' | 'auth' | 'rest'
-  | 'marketplace' | 'git' | 'mcp' | 'cli' | 'errors'
+  | 'marketplace' | 'git' | 'mcp' | 'cli' | 'audit' | 'errors'
 type RestTabId = 'auth' | 'account' | 'plugins' | 'skills' | 'files' | 'validator'
 
 const sections: { id: SectionId; title: string; hint: string }[] = [
@@ -28,6 +29,7 @@ const sections: { id: SectionId; title: string; hint: string }[] = [
   { id: 'git',         title: 'Git',             hint: 'Clone over Smart HTTP' },
   { id: 'mcp',         title: 'MCP server',      hint: 'Tools at /mcp' },
   { id: 'cli',         title: 'CLI',             hint: 'Import a plugin from disk' },
+  { id: 'audit',       title: 'Security audit',  hint: 'Scheduled skill threat scan' },
   { id: 'errors',      title: 'Errors',          hint: 'Status code reference' },
 ]
 
@@ -135,6 +137,7 @@ const restTabComponent = computed(() => {
         <GitSection         v-else-if="activeSection === 'git'" />
         <McpSection         v-else-if="activeSection === 'mcp'" />
         <CliSection         v-else-if="activeSection === 'cli'" />
+        <AuditSection       v-else-if="activeSection === 'audit'" />
         <ErrorsSection      v-else-if="activeSection === 'errors'" />
 
         <template v-else-if="activeSection === 'rest'">

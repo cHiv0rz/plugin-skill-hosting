@@ -39,6 +39,11 @@ export const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/audit',
+      component: () => import('./views/AuditView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/pending',
       component: () => import('./views/PendingView.vue'),
       meta: { requiresAuth: true },
@@ -97,6 +102,10 @@ router.beforeEach(async (to) => {
       if (!auth.user?.isAdmin || !userMgmtOn) {
         return { path: '/' }
       }
+    }
+    // /audit is admin-only in every auth mode (it can expose skill internals).
+    if (to.path === '/audit' && !auth.user?.isAdmin) {
+      return { path: '/' }
     }
   }
 })

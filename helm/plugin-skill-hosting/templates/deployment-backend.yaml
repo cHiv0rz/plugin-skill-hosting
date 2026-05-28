@@ -152,6 +152,40 @@ spec:
               key: EXTERNAL_GIT_TOKEN
               optional: true
         {{- end }}
+        {{- if .Values.audit.enabled }}
+        - name: AUDIT_ENABLED
+          value: "true"
+        - name: AUDIT_INTERVAL
+          value: {{ .Values.audit.interval | default "24h" | quote }}
+        - name: AUDIT_ALERT_THRESHOLD
+          value: {{ .Values.audit.alertThreshold | default 70 | quote }}
+        {{- with .Values.audit.alertEmails }}
+        - name: AUDIT_ALERT_EMAILS
+          value: {{ join "," . | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.smtp.host }}
+        - name: SMTP_HOST
+          value: {{ .Values.smtp.host | quote }}
+        - name: SMTP_PORT
+          value: {{ .Values.smtp.port | default 587 | quote }}
+        - name: SMTP_USE_TLS
+          value: {{ .Values.smtp.useTLS | default true | quote }}
+        {{- with .Values.smtp.username }}
+        - name: SMTP_USERNAME
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.smtp.from }}
+        - name: SMTP_FROM
+          value: {{ . | quote }}
+        {{- end }}
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "psh.secretName" . }}
+              key: SMTP_PASSWORD
+              optional: true
+        {{- end }}
         # Go's os/user.Current() requires either CGO or $USER to be set.
         # The container runs as uid 10001 which has no /etc/passwd entry and
         # the binary is compiled without CGO, so we inject USER explicitly.

@@ -15,6 +15,7 @@
 #   - METRICS_TOKEN              (when backend.metrics.exposeOnIngress=true)
 #   - EXTERNAL_GIT_TOKEN         (when externalGit.remoteURL is set with an HTTPS remote)
 #   - MCP_OAUTH_CLIENT_SECRET    (when mcpOAuth.clientID is set)
+#   - SMTP_PASSWORD              (when smtp.host is set and the relay needs auth)
 existingSecret: ""
 
 # Public URL (must be HTTPS — Claude Code rejects http:// plugin sources).
@@ -143,6 +144,28 @@ mcpOAuth:
   redirectURIs:
     - https://claude.ai/api/mcp/auth_callback
     - https://claude.ai/api/auth/callback
+
+# Scheduled skill security audit. When enabled (and ANTHROPIC_API_KEY is set in
+# the sealed secret), a background job re-evaluates every skill for harmful or
+# malicious behavior on `interval`, stores the verdict, and emails `alertEmails`
+# when a skill's risk score (0-100) reaches `alertThreshold`. Sending email
+# additionally requires the `smtp` block below to be configured.
+audit:
+  enabled: false
+  interval: 24h          # Go duration: 24h (daily), 168h (weekly)
+  alertThreshold: 70     # 0-100; alert when a skill's risk score >= this
+  alertEmails: []        # recipients of threat alerts
+    # - security@example.com
+
+# SMTP for outbound alert email. Leave host empty to disable email — the audit
+# job then logs alerts instead of sending them. The password goes into the
+# sealed secret under the SMTP_PASSWORD key (optional).
+smtp:
+  host: ""
+  port: 587
+  username: ""
+  from: ""
+  useTLS: true
 
 # Frontend (nginx serving the SPA) configuration
 frontend:

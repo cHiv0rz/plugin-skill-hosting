@@ -124,3 +124,34 @@ export interface FindingFix {
   extraFrontmatter?: string
   note?: string
 }
+
+export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
+export type AuditSeverity = 'critical' | 'high' | 'medium' | 'low'
+
+export interface AuditFinding {
+  category: string
+  severity: AuditSeverity
+  detail: string
+}
+
+// AuditResult is the latest stored security-audit verdict for one skill.
+export interface AuditResult {
+  skillId: string
+  pluginName: string
+  skillName: string
+  auditedAt: string
+  model: string
+  riskScore: number
+  riskLevel: RiskLevel
+  categories: string[]
+  summary: string
+  findings: AuditFinding[]
+  error?: string
+}
+
+export interface AuditResultsResponse {
+  enabled: boolean
+  threshold: number
+  running: boolean
+  results: AuditResult[]
+}

@@ -142,6 +142,22 @@ var (
 		},
 		[]string{"tool"},
 	)
+
+	SkillAuditTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "psh_skill_audit_total",
+			Help: "Per-skill security audit calls by result (success|error).",
+		},
+		[]string{"result"},
+	)
+
+	SkillAuditRunsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "psh_skill_audit_runs_total",
+			Help: "Completed audit sweeps by trigger (scheduled|manual).",
+		},
+		[]string{"trigger"},
+	)
 )
 
 func init() {
@@ -163,6 +179,8 @@ func init() {
 		ClaudeFindingFixTotal,
 		MCPToolCallsTotal,
 		MCPToolCallDuration,
+		SkillAuditTotal,
+		SkillAuditRunsTotal,
 	)
 }
 

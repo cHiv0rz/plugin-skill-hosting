@@ -36,7 +36,7 @@ Plugin and skill versions are managed automatically: the first plugin a user cre
 - **Frontend**: Vue 3 + Vite + Pinia + vue-router (TypeScript)
 - **Database**: Postgres 16
 - **Reverse proxy**: nginx (in the frontend container) — proxies `/api`, `/git`, `/mcp`, `/marketplace.json` to the backend
-- **Optional**: an `ANTHROPIC_API_KEY` enables the in-app skill validator (POST `/api/skills/validate`) which runs a skill body through the Anthropic API for static review
+- **Optional**: an `ANTHROPIC_API_KEY` enables the in-app skill validator (POST `/api/skills/validate`) which runs a skill body through the Anthropic API for static review, and powers the scheduled [skill security audit](#skill-security-audit-optional)
 
 ## Authentication
 
@@ -206,6 +206,35 @@ For a **private** repo, Claude Code will need credentials with read access — s
 
 For other git hosts (self-hosted Gitea, Bitbucket, raw `git+ssh`), no `marketplace.json` is generated — Claude Code's marketplace schema doesn't currently support a generic "git URL + subpath" source type. You can still use the repo as a backup/audit trail; just install plugins via the marketplace server's URL as before.
 
+## Skill security audit (optional)
+
+A scheduled background job re-evaluates **every skill for harmful or malicious behavior** — data exfiltration, destructive actions, malicious code, credential harvesting, prompt injection, deception, and supply-chain risk — using the Anthropic API. It stores a risk verdict per skill, retains history, and emails configured recipients when a skill crosses a risk threshold. Admins review results in the web UI under `/audit`.
+
+The job is **off by default** and a no-op without `ANTHROPIC_API_KEY`. Set on the backend container:
+
+| Var | Required | Default |
+| --- | --- | --- |
+| `AUDIT_ENABLED` | yes (set to `true`) | `false` |
+| `AUDIT_INTERVAL` | no | `24h` (Go duration; `168h` = weekly) |
+| `AUDIT_ALERT_THRESHOLD` | no | `70` (risk score 0–100) |
+| `AUDIT_ALERT_EMAILS` | for alerts | — (comma-separated recipients) |
+| `SMTP_HOST` | for email | — (empty disables email) |
+| `SMTP_PORT` | no | `587` |
+| `SMTP_USERNAME` | no | — (omit to skip SMTP AUTH) |
+| `SMTP_PASSWORD` | no | — (supply via the application secret) |
+| `SMTP_FROM` | for email | — |
+| `SMTP_USE_TLS` | no | `true` (STARTTLS after connecting) |
+
+Mechanics:
+
+- One Claude call per skill, on `AUDIT_INTERVAL`. On startup the sweep runs immediately only if the most recent stored audit is older than one interval (or none exists), so frequent restarts don't re-audit on every launch.
+- Each call scores the skill `0–100` (`low`/`medium`/`high`/`critical`), with threat categories, a one-line summary, and per-finding details. The server recomputes the level from the score, so the model can't under-report severity.
+- **Unlike the skill validator**, the audit sends supporting-file *contents* (scripts, references) to the model — malicious payloads typically hide there rather than in `SKILL.md`. Text files are capped per file; binary files are listed by path/size only. Note that this means skill file contents leave your infrastructure on each run.
+- Skills scoring at or above `AUDIT_ALERT_THRESHOLD` trigger a single batched alert email per sweep. When SMTP is unconfigured (or no recipients are set) the alert is written to the logs instead, never dropped.
+- A failed audit for one skill (API error, unparseable output) is recorded with its error and skipped — the sweep continues. Overlapping sweeps are prevented; a manual trigger while one is running returns `409`.
+
+Under Helm, set the `audit` and `smtp` blocks in `values.yaml`; `SMTP_PASSWORD` goes into the application secret alongside the other optional keys.
+
 ## Run locally with Docker Compose
 
 ```bash
@@ -337,8 +366,10 @@ Token-gated (Bearer JWT or API token; HTTP Basic with token as password is also 
 - `POST /api/me/token/regenerate` → `{ apiToken }` (invalidates the previous token)
 - `GET /api/me/deleted-plugins` — soft-deleted plugins owned by the caller (drives the restore UI)
 
-*Admin (external git, optional)*
+*Admin*
 - `POST /api/external-git/sync-out` — re-materialize every DB plugin into the external repo (one-shot bootstrap when enabling sync on a populated DB)
+- `GET /api/audit/results` — latest security-audit verdict per skill (risk score, level, categories, findings), ordered by risk descending
+- `POST /api/audit/run` — trigger an on-demand audit sweep in the background (`202`; `409` if one is already running)
 
 *Plugins*
 - `GET /api/plugins` — list all active plugins

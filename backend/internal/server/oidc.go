@@ -358,6 +358,9 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 		if u.Status == UserStatusRejected {
 			return nil, errors.New("account has been rejected")
 		}
+		if u.Status == UserStatusDeleted {
+			return nil, errors.New("account does not exist")
+		}
 		return u, nil
 	}
 	if err != sql.ErrNoRows {
@@ -373,6 +376,9 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 		if err == nil {
 			if u.Status == UserStatusRejected {
 				return nil, errors.New("account has been rejected")
+			}
+			if u.Status == UserStatusDeleted {
+				return nil, errors.New("account does not exist")
 			}
 			if _, err := a.DB.ExecContext(ctx,
 				`UPDATE users SET oidc_issuer = $1, oidc_subject = $2 WHERE id = $3`,

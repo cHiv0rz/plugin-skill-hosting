@@ -237,6 +237,12 @@ func (a *App) handleOAuthAuthorizeSubmit(w http.ResponseWriter, r *http.Request)
 		rerender("Invalid email or password.")
 		return
 	}
+	if userStatus == UserStatusDeleted {
+		// A soft-deleted account no longer exists; don't reveal it was deleted.
+		metrics.LoginsTotal.WithLabelValues("password", "failure").Inc()
+		rerender("Invalid email or password.")
+		return
+	}
 	if userStatus != UserStatusApproved {
 		rerender("Your account is not yet approved.")
 		return

@@ -364,6 +364,15 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
+	// A soft-deleted account no longer exists from the user's perspective.
+	// Treat it as if the credentials don't match rather than logging them in
+	// (which would route them to /pending — "awaiting approval" — even though
+	// they never appear in the admin's waiting-users list).
+	if status == UserStatusDeleted {
+		metrics.LoginsTotal.WithLabelValues("password", "failure").Inc()
+		writeErr(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
 	metrics.LoginsTotal.WithLabelValues("password", "success").Inc()
 
 	tok, err := a.issueToken(id)

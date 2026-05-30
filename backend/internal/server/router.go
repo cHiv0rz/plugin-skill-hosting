@@ -21,10 +21,20 @@ func NewRouter(app *App) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(metrics.HTTPMiddleware)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   app.Cfg.AllowedOrigins,
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type"},
-		ExposedHeaders:   []string{"Link"},
+		AllowedOrigins: app.Cfg.AllowedOrigins,
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		// Authorization + Content-Type cover the REST API. The Mcp-* and
+		// Last-Event-ID request headers are sent by browser-based MCP
+		// Streamable HTTP clients (e.g. the MCP Inspector's direct connection);
+		// without them the CORS preflight for /mcp fails even when the origin
+		// is allowed.
+		AllowedHeaders: []string{
+			"Authorization", "Content-Type", "Accept",
+			"Mcp-Session-Id", "Mcp-Protocol-Version", "Last-Event-ID",
+		},
+		// Link paginates the REST API; Mcp-Session-Id must be readable by MCP
+		// clients so they can carry the session across requests.
+		ExposedHeaders:   []string{"Link", "Mcp-Session-Id"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))

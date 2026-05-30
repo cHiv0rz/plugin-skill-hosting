@@ -48,7 +48,7 @@ func TestIssueAndParseTokenRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueToken: %v", err)
 	}
-	got, err := a.parseToken(tok)
+	got, _, err := a.parseToken(tok)
 	if err != nil {
 		t.Fatalf("parseToken: %v", err)
 	}
@@ -64,14 +64,14 @@ func TestParseTokenRejectsWrongSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueToken: %v", err)
 	}
-	if _, err := verifier.parseToken(tok); err == nil {
+	if _, _, err := verifier.parseToken(tok); err == nil {
 		t.Error("parseToken accepted token signed with a different secret")
 	}
 }
 
 func TestParseTokenRejectsGarbage(t *testing.T) {
 	a := &App{Cfg: config.Config{JWTSecret: "x"}}
-	if _, err := a.parseToken("not-a-jwt"); err == nil {
+	if _, _, err := a.parseToken("not-a-jwt"); err == nil {
 		t.Error("parseToken accepted non-JWT input")
 	}
 }
@@ -96,7 +96,7 @@ func TestGenerateAPIToken(t *testing.T) {
 func TestAuthenticateRequest_NoHeader(t *testing.T) {
 	a := &App{}
 	r := httptest.NewRequest("GET", "/", nil)
-	u, msg, err := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestAuthenticateRequest_EmptyBearer(t *testing.T) {
 	a := &App{}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Bearer ")
-	u, msg, err := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestAuthenticateRequest_BadJWT(t *testing.T) {
 	a := &App{Cfg: config.Config{JWTSecret: "x"}}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Bearer not.a.jwt")
-	u, msg, err := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestAuthenticateRequest_BasicWithoutPassword(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	// Username without password — Go's r.BasicAuth still parses but pass is empty.
 	r.SetBasicAuth("anything", "")
-	u, msg, err := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestAuthenticateRequest_UnknownScheme(t *testing.T) {
 	a := &App{}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Digest something")
-	u, msg, err := a.authenticateRequest(r)
+	u, msg, err := a.authenticateRequest(r, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}

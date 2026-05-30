@@ -98,11 +98,12 @@ Some MCP clients — Claude.ai's remote MCP connector being the headline one —
 | --- | --- | --- |
 | `MCP_OAUTH_CLIENT_ID` | yes (enables OAuth) | — |
 | `MCP_OAUTH_CLIENT_SECRET` | yes (enables OAuth) | — |
-| `MCP_OAUTH_REDIRECT_URIS` | no | `https://claude.ai/api/mcp/auth_callback,https://claude.ai/api/auth/callback` |
+| `MCP_OAUTH_REDIRECT_URIS` | no | `https://claude.ai/api/mcp/auth_callback` |
 
-When enabled, three endpoints come online:
+When enabled, these endpoints come online:
 
 - `GET /.well-known/oauth-authorization-server` — RFC 8414 metadata document so clients can discover the rest.
+- `GET /.well-known/oauth-protected-resource` (and the `/mcp`-suffixed variant) — RFC 9728 metadata naming the authorization server that protects `/mcp`. The `/mcp` 401 challenge points clients here.
 - `GET /oauth/authorize` and `POST /oauth/authorize` — the authorization endpoint. In `AUTH_MODE=password` it renders a built-in login form; in `AUTH_MODE=oidc` it redirects through the configured OIDC provider and resumes once the user is back.
 - `POST /oauth/token` — exchanges an authorization code for an access + refresh token, and rotates refresh tokens.
 
@@ -111,7 +112,7 @@ The flow is OAuth 2.1 strict:
 - **PKCE with S256 is required** — `plain` and unencoded challenges are rejected.
 - **`redirect_uri` must be an exact match** against `MCP_OAUTH_REDIRECT_URIS` (no prefix or wildcard matching).
 - **Confidential client only** — a single client is configured per deployment via the env vars; there is no Dynamic Client Registration. The client must authenticate at the token endpoint via HTTP Basic or `client_secret_post`.
-- **Tokens** — access tokens are HS256 JWTs valid for 1 hour (signed with the same `JWT_SECRET` as session tokens, so they ride the regular middleware). Refresh tokens are opaque, valid for 30 days, and rotated on each use. Both auth codes and refresh tokens are stored as SHA-256 hashes; a background sweep deletes expired rows every hour.
+- **Tokens** — access tokens are HS256 JWTs valid for 1 hour (signed with the same `JWT_SECRET` as session tokens). They carry a `typ: mcp_access` claim that confines them to the `/mcp` endpoint: the regular `/api` and `/git`/`marketplace.json` gates reject them, so a Claude-held OAuth token can't be replayed against the API (e.g. to regenerate the user's long-lived API token). Refresh tokens are opaque, valid for 30 days, and rotated on each use. Both auth codes and refresh tokens are stored as SHA-256 hashes; a background sweep deletes expired rows every hour.
 - **User status is enforced at issuance and on refresh** — pending or rejected users are turned away with `access_denied` / `invalid_grant`.
 
 Once the env vars are set, point a Claude.ai remote MCP connector at `https://<your-host>/mcp` and it will discover the OAuth endpoints automatically — no token to paste. Existing static-bearer clients continue to work unchanged.

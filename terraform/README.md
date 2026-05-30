@@ -25,7 +25,7 @@ plan.
                   │   + WAFv2    │
                   └──┬────────┬──┘
    default ("/")     │        │  /api/*, /git/*, /mcp*, /marketplace.json,
-   ┌─────────────────┘        │  /healthz, /readyz
+   ┌─────────────────┘        │  /healthz, /readyz, /oauth/*, /.well-known/oauth-*
    ▼                          ▼
 ┌────────┐                ┌───────────────────┐
 │ S3 SPA │                │  ALB (HTTP :80)   │

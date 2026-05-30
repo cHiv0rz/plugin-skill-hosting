@@ -26,6 +26,15 @@ existingSecret: ""
 # This is exposed to the backend as PUBLIC_BASE_URL and embedded in marketplace.json.
 publicBaseURL: "https://ai-plugins.oglimmer.com"
 
+# CORS allowlist for browser cross-origin requests (sets CORS_ALLOWED_ORIGINS).
+# Leave empty and the backend locks CORS to publicBaseURL's own origin — correct
+# for the same-origin SPA, but it blocks browser-based MCP tools served from
+# another origin (e.g. the MCP Inspector at http://localhost:6274, which fetches
+# /mcp directly). Add those origins here to allow them. Use ["*"] to allow any
+# origin (dev only). Exact scheme+host[:port] match, no trailing slash.
+corsAllowedOrigins: []
+  # - http://localhost:6274
+
 # Name shown in marketplace.json (also used as the owner name).
 marketplaceName: "oglimmer-marketplace"
 
@@ -138,12 +147,12 @@ externalGit:
 # OAuth 2.1 authorization server for the /mcp endpoint. Disabled until
 # clientID is non-empty. When enabled, the sealed secret must additionally
 # carry MCP_OAUTH_CLIENT_SECRET. Leave redirectURIs empty to fall back to
-# the backend's compiled-in default (the two well-known Claude callback URLs).
+# the backend's compiled-in default (Claude.ai's hosted MCP callback URL).
 mcpOAuth:
   clientID: "xxx"
   redirectURIs:
     - https://claude.ai/api/mcp/auth_callback
-    - https://claude.ai/api/auth/callback
+    # - http://localhost:6274/oauth/callback
 
 # Scheduled skill security audit. When enabled (and ANTHROPIC_API_KEY is set in
 # the sealed secret), a background job re-evaluates every skill for harmful or
@@ -256,6 +265,13 @@ ingress:
           backend: api
         - path: /.well-known/oauth-authorization-server
           pathType: Exact
+          backend: api
+        # Prefix covers both the bare resource-metadata path and the
+        # /mcp-suffixed variant the 401 challenge points clients at. Without
+        # this the path falls through to the SPA catch-all and clients get
+        # HTML instead of JSON, breaking OAuth discovery.
+        - path: /.well-known/oauth-protected-resource
+          pathType: Prefix
           backend: api
         - path: /oauth
           pathType: Prefix

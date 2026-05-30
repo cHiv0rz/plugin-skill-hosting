@@ -432,7 +432,7 @@ type oauthTokenPair struct {
 }
 
 func (a *App) issueOAuthTokenPair(ctx context.Context, userID string) (*oauthTokenPair, error) {
-	accessToken, err := a.issueShortToken(userID, time.Hour)
+	accessToken, err := a.issueMCPAccessToken(userID)
 	if err != nil {
 		return nil, fmt.Errorf("access token: %w", err)
 	}

@@ -81,7 +81,7 @@ type Config struct {
 	// MCPOAuthClientID / MCPOAuthClientSecret enable OAuth 2.1 Authorization
 	// Code + PKCE on the /mcp endpoint. Both must be set or both empty.
 	// MCPOAuthRedirectURIs is the allowlist of callback URIs the OAuth client
-	// may request; defaults to the two well-known Claude callback URLs.
+	// may request; defaults to Claude.ai's hosted MCP connector callback URL.
 	MCPOAuthClientID     string
 	MCPOAuthClientSecret string
 	MCPOAuthRedirectURIs []string
@@ -151,7 +151,7 @@ func Load() Config {
 		MCPOAuthClientID:     getenv("MCP_OAUTH_CLIENT_ID", ""),
 		MCPOAuthClientSecret: getenv("MCP_OAUTH_CLIENT_SECRET", ""),
 		MCPOAuthRedirectURIs: parseURIList(getenv("MCP_OAUTH_REDIRECT_URIS",
-			"https://claude.ai/api/mcp/auth_callback,https://claude.ai/api/auth/callback")),
+			"https://claude.ai/api/mcp/auth_callback")),
 
 		AuditEnabled:     getenv("AUDIT_ENABLED", "true") != "false",
 		AuditInterval:    parseDuration(getenv("AUDIT_INTERVAL", "24h"), 24*time.Hour),

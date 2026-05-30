@@ -4,6 +4,12 @@ locals {
   # the backend accepts POST/PUT/DELETE on those; /marketplace.json and the
   # probe endpoints are read-only. Compression is off for git smart-HTTP
   # (already framed/packfiled) and for MCP SSE (must flush immediately).
+  #
+  # The OAuth behaviors below are required when MCP_OAUTH_CLIENT_ID is set:
+  # without them the discovery (.well-known/*) and authorize/token (/oauth/*)
+  # paths fall through to the S3/SPA origin and clients receive index.html
+  # instead of JSON, breaking OAuth discovery. The /oauth/* behavior allows
+  # write methods because /oauth/authorize and /oauth/token accept POST.
   backend_behaviors = [
     { pattern = "/api/*", compress = true, methods = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"] },
     { pattern = "/git/*", compress = false, methods = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"] },
@@ -11,6 +17,9 @@ locals {
     { pattern = "/marketplace.json", compress = true, methods = ["GET", "HEAD"] },
     { pattern = "/healthz", compress = false, methods = ["GET", "HEAD"] },
     { pattern = "/readyz", compress = false, methods = ["GET", "HEAD"] },
+    { pattern = "/.well-known/oauth-authorization-server", compress = true, methods = ["GET", "HEAD", "OPTIONS"] },
+    { pattern = "/.well-known/oauth-protected-resource*", compress = true, methods = ["GET", "HEAD", "OPTIONS"] },
+    { pattern = "/oauth/*", compress = true, methods = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"] },
   ]
 }
 

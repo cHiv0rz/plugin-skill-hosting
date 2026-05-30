@@ -15,6 +15,13 @@ import (
 	"marketplace/internal/metrics"
 )
 
+// tokenTypeMCPAccess is the "typ" claim stamped on OAuth access tokens issued
+// to MCP clients. Session/API JWTs carry no "typ" claim and remain full-access;
+// an mcp_access token is accepted only at the /mcp gate (see resolveToken's
+// allowMCPScope argument) so a Claude-held OAuth token can't reach regular /api
+// routes — in particular it can't regenerate the user's long-lived API token.
+const tokenTypeMCPAccess = "mcp_access"
+
 func (a *App) issueToken(userID string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": userID,
@@ -25,17 +32,24 @@ func (a *App) issueToken(userID string) (string, error) {
 	return t.SignedString([]byte(a.Cfg.JWTSecret))
 }
 
-func (a *App) issueShortToken(userID string, dur time.Duration) (string, error) {
+// issueMCPAccessToken mints a 1-hour OAuth access token tagged with the
+// mcp_access purpose claim. Used only by the OAuth token endpoint; the claim
+// confines the token to the /mcp gate.
+func (a *App) issueMCPAccessToken(userID string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": userID,
+		"typ": tokenTypeMCPAccess,
 		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(dur).Unix(),
+		"exp": time.Now().Add(time.Hour).Unix(),
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return t.SignedString([]byte(a.Cfg.JWTSecret))
 }
 
-func (a *App) parseToken(tok string) (string, error) {
+// parseToken validates a JWT and returns its subject and "typ" claim. typ is
+// empty for ordinary session/API tokens and "mcp_access" for OAuth access
+// tokens.
+func (a *App) parseToken(tok string) (sub, typ string, err error) {
 	parsed, err := jwt.Parse(tok, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
@@ -43,17 +57,18 @@ func (a *App) parseToken(tok string) (string, error) {
 		return []byte(a.Cfg.JWTSecret), nil
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	claims, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok || !parsed.Valid {
-		return "", errors.New("invalid token")
+		return "", "", errors.New("invalid token")
 	}
-	sub, _ := claims["sub"].(string)
+	sub, _ = claims["sub"].(string)
 	if sub == "" {
-		return "", errors.New("missing sub")
+		return "", "", errors.New("missing sub")
 	}
-	return sub, nil
+	typ, _ = claims["typ"].(string)
+	return sub, typ, nil
 }
 
 // authenticateRequest accepts:
@@ -61,22 +76,26 @@ func (a *App) parseToken(tok string) (string, error) {
 //   - Authorization: Bearer <api_token> — opaque per-user API token
 //   - HTTP Basic Auth — password = api token (username ignored)
 //
+// allowMCPScope reports whether an OAuth mcp_access JWT is acceptable here; only
+// the /mcp gate passes true. All other gates reject mcp_access tokens so a
+// Claude-held OAuth token can't be replayed against regular /api routes.
+//
 // Returns (user, "", nil) on success; (nil, msg, nil) on credential failure
 // (msg is the 401 reason, "" when no credential was presented at all); and
 // (nil, "", err) on an unexpected backend error (DB outage, etc.) so callers
 // can map that to 500 instead of silently 401-ing legitimate clients.
-func (a *App) authenticateRequest(r *http.Request) (*User, string, error) {
+func (a *App) authenticateRequest(r *http.Request, allowMCPScope bool) (*User, string, error) {
 	if h := r.Header.Get("Authorization"); h != "" {
 		if strings.HasPrefix(h, "Bearer ") {
 			tok := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
 			if tok == "" {
 				return nil, "empty bearer token", nil
 			}
-			return a.resolveToken(r.Context(), tok)
+			return a.resolveToken(r.Context(), tok, allowMCPScope)
 		}
 		if strings.HasPrefix(h, "Basic ") {
 			if _, pass, ok := r.BasicAuth(); ok && pass != "" {
-				return a.resolveToken(r.Context(), pass)
+				return a.resolveToken(r.Context(), pass, allowMCPScope)
 			}
 			return nil, "invalid basic auth", nil
 		}
@@ -87,12 +106,17 @@ func (a *App) authenticateRequest(r *http.Request) (*User, string, error) {
 // resolveToken resolves either a JWT or a raw API token to a user. Distinguishes
 // "credential is bad" (msg set, err nil) from "DB lookup failed" (msg empty,
 // err set) so an intermittent backend hiccup is not reported back to the
-// caller as a 401.
-func (a *App) resolveToken(ctx context.Context, tok string) (*User, string, error) {
+// caller as a 401. An OAuth mcp_access JWT is rejected unless allowMCPScope is
+// set; the check runs before the DB lookup so a misdirected token never even
+// resolves to a user.
+func (a *App) resolveToken(ctx context.Context, tok string, allowMCPScope bool) (*User, string, error) {
 	if strings.Count(tok, ".") == 2 {
-		userID, err := a.parseToken(tok)
+		userID, typ, err := a.parseToken(tok)
 		if err != nil {
 			return nil, "invalid token", nil
+		}
+		if typ == tokenTypeMCPAccess && !allowMCPScope {
+			return nil, "token not valid for this endpoint", nil
 		}
 		u, err := a.userByID(ctx, userID)
 		if err == sql.ErrNoRows {
@@ -115,7 +139,7 @@ func (a *App) resolveToken(ctx context.Context, tok string) (*User, string, erro
 
 func (a *App) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u, errMsg, err := a.authenticateRequest(r)
+		u, errMsg, err := a.authenticateRequest(r, false)
 		if err != nil {
 			serverErr(w, r, err, "auth lookup error")
 			return
@@ -177,7 +201,7 @@ func (a *App) requireAdminMiddleware(next http.Handler) http.Handler {
 // curl prompt for credentials.
 func (a *App) tokenGateMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u, _, err := a.authenticateRequest(r)
+		u, _, err := a.authenticateRequest(r, false)
 		if err != nil {
 			serverErr(w, r, err, "auth lookup error")
 			return
@@ -202,7 +226,7 @@ func (a *App) tokenGateMiddleware(next http.Handler) http.Handler {
 // Basic challenge here pushes them into the OAuth-fallback path.
 func (a *App) mcpTokenGateMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u, errMsg, err := a.authenticateRequest(r)
+		u, errMsg, err := a.authenticateRequest(r, true)
 		if err != nil {
 			serverErr(w, r, err, "auth lookup error")
 			return

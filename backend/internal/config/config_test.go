@@ -1,9 +1,31 @@
 package config
 
 import (
+	"bytes"
+	"encoding/hex"
 	"strings"
 	"testing"
 )
+
+func TestDeriveAPITokenKey(t *testing.T) {
+	// Derivation from JWT_SECRET is deterministic and exactly 32 bytes.
+	k1 := deriveAPITokenKey("", "some-jwt-secret-value")
+	if len(k1) != 32 {
+		t.Fatalf("derived key length = %d, want 32", len(k1))
+	}
+	if !bytes.Equal(k1, deriveAPITokenKey("", "some-jwt-secret-value")) {
+		t.Error("derivation is not deterministic for the same secret")
+	}
+	if bytes.Equal(k1, deriveAPITokenKey("", "a-different-secret")) {
+		t.Error("different JWT secrets produced the same key")
+	}
+	// An explicit 64-hex-char key is used verbatim.
+	explicit := strings.Repeat("ab", 32)
+	want, _ := hex.DecodeString(explicit)
+	if !bytes.Equal(deriveAPITokenKey(explicit, "ignored"), want) {
+		t.Error("explicit API_TOKEN_ENC_KEY was not used verbatim")
+	}
+}
 
 func TestRequiresUserApproval(t *testing.T) {
 	cases := []struct {

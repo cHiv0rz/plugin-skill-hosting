@@ -52,6 +52,10 @@ func main() {
 		},
 	}
 
+	// One-time (idempotent) encryption of any API tokens still stored in
+	// plaintext from before migration 0015, clearing the plaintext as it goes.
+	app.BackfillAPITokenCiphertext(context.Background())
+
 	if err := app.InitExternalSync(context.Background()); err != nil {
 		log.Fatalf("external git sync init: %v", err)
 	}

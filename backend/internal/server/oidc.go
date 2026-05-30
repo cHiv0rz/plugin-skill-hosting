@@ -406,6 +406,10 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 	if err != nil {
 		return nil, err
 	}
+	apiEnc, err := a.encryptAPIToken(apiTok)
+	if err != nil {
+		return nil, err
+	}
 	// Status and is_admin are decided in SQL so the empty-DB bootstrap case
 	// stays race-safe: the first ever user is always 'approved' AND admin,
 	// even if two callbacks arrive simultaneously.
@@ -414,16 +418,16 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 		isAdmin    bool
 	)
 	err = a.DB.QueryRowContext(ctx,
-		`INSERT INTO users (email, username, oidc_issuer, oidc_subject, api_token, status, is_admin)
-		 VALUES ($1, $2, $3, $4, $5,
+		`INSERT INTO users (email, username, oidc_issuer, oidc_subject, api_token_hash, api_token_enc, status, is_admin)
+		 VALUES ($1, $2, $3, $4, $5, $6,
 		     CASE
-		         WHEN $6::boolean AND EXISTS (SELECT 1 FROM users WHERE status = 'approved')
+		         WHEN $7::boolean AND EXISTS (SELECT 1 FROM users WHERE status = 'approved')
 		             THEN 'pending'
 		         ELSE 'approved'
 		     END,
 		     NOT EXISTS (SELECT 1 FROM users))
 		 RETURNING id, status, is_admin, created_at`,
-		email, username, issuer, claims.Sub, apiTok, a.Cfg.RequiresUserApproval(),
+		email, username, issuer, claims.Sub, sha256hex(apiTok), apiEnc, a.Cfg.RequiresUserApproval(),
 	).Scan(&id, &status, &isAdmin, &u.CreatedAt)
 	if err != nil {
 		return nil, err

@@ -3,6 +3,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
 	"net/url"
 	"os"
@@ -28,6 +30,11 @@ type Config struct {
 	ListenAddr    string
 	DataDir       string
 	PublicBaseURL string
+
+	// APITokenKey is the 32-byte AES key used to encrypt API tokens at rest
+	// (see deriveAPITokenKey). API-token authentication uses a separate SHA-256
+	// hash, so this key only governs re-display, never auth.
+	APITokenKey []byte
 
 	// AllowedOrigins is the CORS allowlist for browser cross-origin requests.
 	// Derived from CORS_ALLOWED_ORIGINS (comma-separated, may be "*") when set;
@@ -208,11 +215,33 @@ func Load() Config {
 	if c.AuthMode == "oidc" && len(c.AllowedGoogleWorkspaceDomains) == 0 {
 		log.Printf("WARN: AUTH_MODE=oidc but OIDC_GOOGLE_WORKSPACE_DOMAINS is empty — Google Workspace domain restriction is disabled")
 	}
+	c.APITokenKey = deriveAPITokenKey(getenv("API_TOKEN_ENC_KEY", ""), c.JWTSecret)
 	c.AllowedOrigins = deriveAllowedOrigins(c.PublicBaseURL, getenv("CORS_ALLOWED_ORIGINS", ""))
 	if len(c.AllowedOrigins) == 1 && c.AllowedOrigins[0] == "*" {
 		log.Printf("WARN: CORS allows any origin (*) — set CORS_ALLOWED_ORIGINS or a non-localhost PUBLIC_BASE_URL to lock this down in production")
 	}
 	return c
+}
+
+// deriveAPITokenKey returns the 32-byte AES-256 key used to encrypt API tokens
+// at rest. An explicit API_TOKEN_ENC_KEY (64 hex chars) is used verbatim;
+// otherwise the key is derived from JWT_SECRET with a domain-separation label.
+//
+// Deriving from JWT_SECRET is safe because API-token *authentication* uses a
+// separate SHA-256 hash, not this key — so a key change never locks anyone out.
+// The only consequence of rotating JWT_SECRET without a dedicated key is that
+// previously stored tokens become non-displayable (the holder regenerates to
+// get a freshly shown token; the old token keeps authenticating until then).
+func deriveAPITokenKey(explicit, jwtSecret string) []byte {
+	if explicit != "" {
+		b, err := hex.DecodeString(strings.TrimSpace(explicit))
+		if err != nil || len(b) != 32 {
+			log.Fatalf("API_TOKEN_ENC_KEY must be 64 hex characters (32 bytes); generate with `openssl rand -hex 32`")
+		}
+		return b
+	}
+	sum := sha256.Sum256([]byte("api-token-enc:v1\x00" + jwtSecret))
+	return sum[:]
 }
 
 // insecureJWTSecret reports whether a JWT signing secret is unsafe to sign real

@@ -271,22 +271,35 @@ func generateAPIToken() (string, error) {
 
 func (a *App) userByAPIToken(ctx context.Context, token string) (*User, error) {
 	u := &User{}
+	var enc sql.NullString
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token, status, is_admin, created_at, token_version FROM users WHERE api_token = $1`, token).
-		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
+		`SELECT id, email, username, api_token_enc, status, is_admin, created_at, token_version FROM users WHERE api_token_hash = $1`, sha256hex(token)).
+		Scan(&u.ID, &u.Email, &u.Username, &enc, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
 	if err != nil {
 		return nil, err
 	}
+	// The caller presented the plaintext token, so use it directly for display
+	// instead of decrypting api_token_enc — cheaper, and works even if the
+	// encryption key has since changed.
+	u.APIToken = token
 	return u, nil
 }
 
 func (a *App) userByID(ctx context.Context, id string) (*User, error) {
 	u := &User{}
+	var enc sql.NullString
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token, status, is_admin, created_at, token_version FROM users WHERE id = $1`, id).
-		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
+		`SELECT id, email, username, api_token_enc, status, is_admin, created_at, token_version FROM users WHERE id = $1`, id).
+		Scan(&u.ID, &u.Email, &u.Username, &enc, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
 	if err != nil {
 		return nil, err
+	}
+	// Best-effort decrypt for display; on failure (e.g. key rotated) the token
+	// is simply not shown and the user can regenerate it. Auth is unaffected.
+	if enc.Valid && enc.String != "" {
+		if tok, derr := a.decryptAPIToken(enc.String); derr == nil {
+			u.APIToken = tok
+		}
 	}
 	return u, nil
 }
@@ -329,6 +342,11 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		serverErr(w, r, err, "token error")
 		return
 	}
+	apiEnc, err := a.encryptAPIToken(apiTok)
+	if err != nil {
+		serverErr(w, r, err, "token error")
+		return
+	}
 
 	// is_admin is computed in SQL so the empty-DB bootstrap is decided
 	// atomically with the INSERT (matches the OIDC create path's
@@ -339,10 +357,10 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		isAdmin bool
 	)
 	err = a.DB.QueryRowContext(r.Context(),
-		`INSERT INTO users (email, username, password_hash, api_token, is_admin)
-		 VALUES ($1, $2, $3, $4, NOT EXISTS (SELECT 1 FROM users))
+		`INSERT INTO users (email, username, password_hash, api_token_hash, api_token_enc, is_admin)
+		 VALUES ($1, $2, $3, $4, $5, NOT EXISTS (SELECT 1 FROM users))
 		 RETURNING id, is_admin`,
-		req.Email, req.Username, string(hash), apiTok).Scan(&id, &isAdmin)
+		req.Email, req.Username, string(hash), sha256hex(apiTok), apiEnc).Scan(&id, &isAdmin)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
 			writeErr(w, http.StatusConflict, "email or username already in use")
@@ -385,13 +403,14 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 
 	var (
-		id, username, hash, apiTok, status string
-		isAdmin                            bool
-		tokenVersion                       int
+		id, username, hash, status string
+		isAdmin                    bool
+		tokenVersion               int
+		apiEnc                     sql.NullString
 	)
 	err := a.DB.QueryRowContext(r.Context(),
-		`SELECT id, username, password_hash, api_token, status, is_admin, token_version FROM users WHERE email = $1`, req.Email).
-		Scan(&id, &username, &hash, &apiTok, &status, &isAdmin, &tokenVersion)
+		`SELECT id, username, password_hash, api_token_enc, status, is_admin, token_version FROM users WHERE email = $1`, req.Email).
+		Scan(&id, &username, &hash, &apiEnc, &status, &isAdmin, &tokenVersion)
 	if err == sql.ErrNoRows {
 		metrics.LoginsTotal.WithLabelValues("password", "failure").Inc()
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
@@ -423,6 +442,14 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		serverErr(w, r, err, "token error")
 		return
 	}
+	// Decrypt the stored token for display (best-effort; empty if the key has
+	// rotated — the user can regenerate). Password login has no plaintext to hand.
+	apiTok := ""
+	if apiEnc.Valid && apiEnc.String != "" {
+		if t, derr := a.decryptAPIToken(apiEnc.String); derr == nil {
+			apiTok = t
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"token": tok,
 		"user": User{
@@ -447,8 +474,14 @@ func (a *App) handleRegenerateAPIToken(w http.ResponseWriter, r *http.Request) {
 		serverErr(w, r, err, "token error")
 		return
 	}
+	newEnc, err := a.encryptAPIToken(newTok)
+	if err != nil {
+		serverErr(w, r, err, "token error")
+		return
+	}
 	if _, err := a.DB.ExecContext(r.Context(),
-		`UPDATE users SET api_token = $1 WHERE id = $2`, newTok, user.ID); err != nil {
+		`UPDATE users SET api_token_hash = $1, api_token_enc = $2, api_token = NULL WHERE id = $3`,
+		sha256hex(newTok), newEnc, user.ID); err != nil {
 		serverErr(w, r, err, "db error")
 		return
 	}

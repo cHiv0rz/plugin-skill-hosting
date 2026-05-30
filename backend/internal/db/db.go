@@ -54,6 +54,9 @@ var migration0013 string
 //go:embed migrations/0014_token_version.sql
 var migration0014 string
 
+//go:embed migrations/0015_api_token_encryption.sql
+var migration0015 string
+
 // Open opens the application's *sql.DB through pgx's database/sql adapter and
 // configures it for use behind a transaction-pool PgBouncer (the deployment in
 // front of OVH Managed PG, and the common HA layout in general).
@@ -142,6 +145,9 @@ func Migrate(db *sql.DB) error {
 	}
 	if _, err := db.Exec(migration0014); err != nil {
 		return fmt.Errorf("0014_token_version: %w", err)
+	}
+	if _, err := db.Exec(migration0015); err != nil {
+		return fmt.Errorf("0015_api_token_encryption: %w", err)
 	}
 	return nil
 }

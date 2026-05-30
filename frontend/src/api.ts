@@ -18,6 +18,24 @@ function token(): string | null {
   return localStorage.getItem('token')
 }
 
+// isJwtExpired decodes a JWT's payload and reports whether its `exp` claim is
+// already in the past. Anything it can't confidently read as expired — a
+// malformed token, a missing/non-numeric exp — returns false so the server
+// stays the source of truth in ambiguous cases. This lets us treat a session
+// as logged-out client-side before wasting a round-trip on a doomed request.
+export function isJwtExpired(tok: string): boolean {
+  const parts = tok.split('.')
+  if (parts.length !== 3) return false
+  try {
+    const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
+    const claims = JSON.parse(json) as { exp?: number }
+    if (typeof claims.exp !== 'number') return false
+    return claims.exp * 1000 <= Date.now()
+  } catch {
+    return false
+  }
+}
+
 // ApiError carries the HTTP status alongside the message so callers can react
 // to *what kind* of failure occurred — e.g. show a 404 error page for a
 // missing plugin vs a 500 page for a server fault. Plain `errMsg(e)` still
@@ -47,7 +65,13 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers = new Headers(opts.headers)
   headers.set('Content-Type', 'application/json')
   const t = token()
-  if (t) headers.set('Authorization', `Bearer ${t}`)
+  if (t) {
+    // Bail before the network call once the token is past its exp — the server
+    // would only answer 401 anyway, and short-circuiting lets callers/guards
+    // react to an expired session uniformly.
+    if (isJwtExpired(t)) throw new ApiError(401, 'session expired')
+    headers.set('Authorization', `Bearer ${t}`)
+  }
   const res = await fetch(path, { ...opts, headers })
   if (!res.ok) {
     let msg = res.statusText
@@ -111,7 +135,10 @@ export const api = {
     form.append('file', zip)
     const headers = new Headers()
     const t = token()
-    if (t) headers.set('Authorization', `Bearer ${t}`)
+    if (t) {
+      if (isJwtExpired(t)) throw new ApiError(401, 'session expired')
+      headers.set('Authorization', `Bearer ${t}`)
+    }
     const res = await fetch(`/api/plugins/${pluginName}/skills/import`, {
       method: 'POST',
       headers,

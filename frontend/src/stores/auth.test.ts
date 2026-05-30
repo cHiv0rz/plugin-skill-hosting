@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
-vi.mock('../api', () => ({
+vi.mock('../api', async (importOriginal) => ({
+  // Keep the real isJwtExpired so store init exercises the actual expiry logic;
+  // only the network-touching `api` object is stubbed out.
+  ...(await importOriginal<typeof import('../api')>()),
   api: {
     login: vi.fn(),
     register: vi.fn(),
@@ -10,6 +13,15 @@ vi.mock('../api', () => ({
     authConfig: vi.fn(),
   },
 }))
+
+// makeJwt builds a structurally valid HS256-style JWT with the given exp
+// (seconds since epoch); only the payload is decoded client-side, so the
+// header/signature can be placeholders.
+function makeJwt(expSeconds: number): string {
+  const b64 = (o: unknown) =>
+    btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: 'u1', exp: expSeconds })}.sig`
+}
 
 import { api } from '../api'
 import { useAuthStore } from './auth'
@@ -35,6 +47,25 @@ describe('auth store', () => {
     const s = useAuthStore()
     expect(s.token).toBe('t0')
     expect(s.user).toEqual(fakeUser)
+  })
+
+  it('keeps a still-valid JWT session on init', () => {
+    const tok = makeJwt(Math.floor(Date.now() / 1000) + 3600)
+    localStorage.setItem('token', tok)
+    localStorage.setItem('user', JSON.stringify(fakeUser))
+    const s = useAuthStore()
+    expect(s.token).toBe(tok)
+    expect(s.user).toEqual(fakeUser)
+  })
+
+  it('drops an expired JWT session (and cached user) on init', () => {
+    localStorage.setItem('token', makeJwt(Math.floor(Date.now() / 1000) - 3600))
+    localStorage.setItem('user', JSON.stringify(fakeUser))
+    const s = useAuthStore()
+    expect(s.token).toBeNull()
+    expect(s.user).toBeNull()
+    expect(localStorage.getItem('token')).toBeNull()
+    expect(localStorage.getItem('user')).toBeNull()
   })
 
   it('returns null user when localStorage holds garbage JSON', () => {

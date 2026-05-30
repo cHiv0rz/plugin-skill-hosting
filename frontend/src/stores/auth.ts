@@ -1,16 +1,32 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api } from '../api'
+import { api, isJwtExpired } from '../api'
 import type { AuthMode, User } from '../types'
 
 export const useAuthStore = defineStore('auth', () => {
+  // loadToken runs first: on an expired session it clears the cached user from
+  // storage, so the subsequent loadUser() reads null and the two stay in sync.
+  const token = ref<string | null>(loadToken())
   const user = ref<User | null>(loadUser())
-  const token = ref<string | null>(localStorage.getItem('token'))
   const mode = ref<AuthMode | null>(null)
   const marketplaceName = ref<string>('')
   const defaultLicense = ref<string>('MIT')
   const userApprovalRequired = ref<boolean>(false)
   let modePromise: Promise<AuthMode> | null = null
+
+  // loadToken reads the stored JWT but discards it (along with the cached user)
+  // if it has already expired, so a tab reopened weeks later starts clean and
+  // the route guard sends the user to /login rather than into a half-authed
+  // state where every API call 401s.
+  function loadToken(): string | null {
+    const t = localStorage.getItem('token')
+    if (t && isJwtExpired(t)) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      return null
+    }
+    return t
+  }
 
   function loadUser(): User | null {
     const raw = localStorage.getItem('user')

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import { isJwtExpired } from './api'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -105,7 +106,12 @@ export const router = createRouter({
 router.beforeEach(async (to) => {
   if (to.meta.requiresAuth) {
     const auth = useAuthStore()
-    if (!auth.token) {
+    // Treat a missing OR expired token as logged-out. Checking exp here (fresh
+    // on every navigation) catches a session that lapsed while the tab sat
+    // open, so we clear the stale state and bounce to login instead of letting
+    // the destination view mount and 401 on its first API call.
+    if (!auth.token || isJwtExpired(auth.token)) {
+      auth.logout()
       return { path: '/login', query: { redirect: to.fullPath } }
     }
     // Pending / rejected users are confined to /pending until an existing

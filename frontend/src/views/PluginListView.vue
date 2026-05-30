@@ -4,12 +4,13 @@ import { errMsg } from '../api'
 import ErrorAlert from '../components/ErrorAlert.vue'
 import { useAuthStore } from '../stores/auth'
 import { usePluginStore } from '../stores/plugins'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useConfirm } from '../composables/useConfirm'
 import { storeToRefs } from 'pinia'
 
 const { confirm } = useConfirm()
 
+const router = useRouter()
 const auth = useAuthStore()
 const pluginStore = usePluginStore()
 const { list: plugins, deleted: deletedPlugins } = storeToRefs(pluginStore)
@@ -17,6 +18,8 @@ const loading = ref(true)
 const error = ref('')
 const tokenError = ref('')
 const regenerating = ref(false)
+const sessionError = ref('')
+const revoking = ref(false)
 const copied = ref('')
 const activeTab = ref<'plugins' | 'connect'>('plugins')
 
@@ -98,6 +101,26 @@ async function regenerate() {
     tokenError.value = errMsg(e)
   } finally {
     regenerating.value = false
+  }
+}
+
+async function signOutEverywhere() {
+  const ok = await confirm({
+    title: 'Sign out everywhere',
+    message: 'This logs you out of every browser and device, including this one. ' +
+      'Connected apps (e.g. Claude over MCP) reconnect automatically. Continue?',
+    confirmLabel: 'Sign out everywhere',
+    danger: true,
+  })
+  if (!ok) return
+  sessionError.value = ''
+  revoking.value = true
+  try {
+    const redirecting = await auth.signOutEverywhere()
+    if (!redirecting) router.push('/login')
+  } catch (e: unknown) {
+    sessionError.value = errMsg(e)
+    revoking.value = false
   }
 }
 
@@ -260,6 +283,19 @@ onMounted(load)
           </div>
           <ErrorAlert :message="tokenError" />
         </details>
+
+        <div class="pl-sessions">
+          <button
+            type="button"
+            class="pl-btn pl-btn--danger"
+            :disabled="revoking"
+            @click="signOutEverywhere"
+          >
+            {{ revoking ? 'signing out…' : 'sign out everywhere' }}
+          </button>
+          <span class="pl-sessions__hint">invalidates every session on all devices, including this one</span>
+        </div>
+        <ErrorAlert :message="sessionError" />
       </div>
 
       <div class="pl-block">
@@ -327,6 +363,19 @@ onMounted(load)
 <style scoped>
 .pl {
   margin-top: -16px;
+}
+
+/* ─── Sessions / sign-out-everywhere ───────────────────────────── */
+.pl-sessions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.pl-sessions__hint {
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 /* ─── Tabs ─────────────────────────────────────────────────────── */

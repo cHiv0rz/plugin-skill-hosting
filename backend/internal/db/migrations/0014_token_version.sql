@@ -1,0 +1,16 @@
+-- Server-side session revocation via a per-user token version.
+--
+-- Browser JWTs (and OAuth access tokens) are validated by signature + exp only,
+-- so an approved user has no way to invalidate a still-valid token they no
+-- longer trust (a lost laptop, a leaked token, a shared machine). This column
+-- is stamped into every issued token as the "ver" claim and compared against
+-- the live value on each authenticated request; incrementing it instantly
+-- rejects every token signed with the old number. It powers the "sign out
+-- everywhere" action.
+--
+-- Account suspension and admin changes deliberately do NOT touch this column:
+-- status and is_admin are read fresh from the users row on every request, so
+-- reject / delete / demote already take effect on the user's very next call.
+-- token_version exists only for the case nothing else covers — revoking the
+-- sessions of an account that stays approved.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;

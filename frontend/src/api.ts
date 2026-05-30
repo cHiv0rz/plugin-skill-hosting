@@ -101,6 +101,8 @@ export const api = {
   me: () => request<User>('/api/me'),
   regenerateToken: () =>
     request<{ apiToken: string }>('/api/me/token/regenerate', { method: 'POST' }),
+  revokeSessions: () =>
+    request<void>('/api/me/sessions/revoke', { method: 'POST' }),
   listUsers: () => request<UserSummary[]>('/api/users'),
   approveUser: (id: string) =>
     request<void>(`/api/users/${id}/approve`, { method: 'POST' }),

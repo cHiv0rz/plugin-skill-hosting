@@ -10,6 +10,7 @@ vi.mock('../api', async (importOriginal) => ({
     register: vi.fn(),
     me: vi.fn(),
     regenerateToken: vi.fn(),
+    revokeSessions: vi.fn(),
     authConfig: vi.fn(),
   },
 }))
@@ -174,6 +175,26 @@ describe('auth store', () => {
     expect(tok).toBe('NEW')
     expect(s.user?.apiToken).toBe('NEW')
     expect(JSON.parse(localStorage.getItem('user')!).apiToken).toBe('NEW')
+  })
+
+  it('signOutEverywhere revokes server-side then clears local state (password mode)', async () => {
+    vi.mocked(api.authConfig).mockResolvedValue({
+      mode: 'password',
+      marketplaceName: 'mp',
+      defaultLicense: 'MIT',
+      userApprovalRequired: false,
+    })
+    vi.mocked(api.revokeSessions).mockResolvedValue()
+    localStorage.setItem('token', 't')
+    localStorage.setItem('user', JSON.stringify(fakeUser))
+    const s = useAuthStore()
+    await s.ensureMode()
+    const redirecting = await s.signOutEverywhere()
+    expect(api.revokeSessions).toHaveBeenCalledOnce()
+    expect(redirecting).toBe(false) // password mode stays local, no OIDC redirect
+    expect(s.token).toBeNull()
+    expect(s.user).toBeNull()
+    expect(localStorage.getItem('token')).toBeNull()
   })
 
   it('refreshUser is a no-op without a token', async () => {

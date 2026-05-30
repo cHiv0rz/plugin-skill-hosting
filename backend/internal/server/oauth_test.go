@@ -317,11 +317,11 @@ func TestHandleRefreshToken_MissingToken(t *testing.T) {
 
 func TestMCPAccessTokenCarriesScopeClaim(t *testing.T) {
 	a := oauthTestApp()
-	mcpTok, err := a.issueMCPAccessToken("user-1")
+	mcpTok, err := a.issueMCPAccessToken("user-1", 0)
 	if err != nil {
 		t.Fatalf("issueMCPAccessToken: %v", err)
 	}
-	_, typ, err := a.parseToken(mcpTok)
+	_, typ, _, err := a.parseToken(mcpTok)
 	if err != nil {
 		t.Fatalf("parseToken: %v", err)
 	}
@@ -329,18 +329,18 @@ func TestMCPAccessTokenCarriesScopeClaim(t *testing.T) {
 		t.Errorf("typ = %q, want %q", typ, tokenTypeMCPAccess)
 	}
 	// Ordinary session tokens stay full-access (no typ claim).
-	sessTok, err := a.issueToken("user-1")
+	sessTok, err := a.issueToken("user-1", 0)
 	if err != nil {
 		t.Fatalf("issueToken: %v", err)
 	}
-	if _, typ, _ := a.parseToken(sessTok); typ != "" {
+	if _, typ, _, _ := a.parseToken(sessTok); typ != "" {
 		t.Errorf("session token typ = %q, want empty", typ)
 	}
 }
 
 func TestResolveTokenRejectsMCPScopeOutsideMCP(t *testing.T) {
 	a := oauthTestApp()
-	mcpTok, err := a.issueMCPAccessToken("user-1")
+	mcpTok, err := a.issueMCPAccessToken("user-1", 0)
 	if err != nil {
 		t.Fatalf("issueMCPAccessToken: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestResolveTokenRejectsMCPScopeOutsideMCP(t *testing.T) {
 
 func TestAuthMiddlewareRejectsMCPAccessToken(t *testing.T) {
 	a := oauthTestApp()
-	mcpTok, err := a.issueMCPAccessToken("user-1")
+	mcpTok, err := a.issueMCPAccessToken("user-1", 0)
 	if err != nil {
 		t.Fatalf("issueMCPAccessToken: %v", err)
 	}

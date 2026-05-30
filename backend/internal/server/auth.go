@@ -22,9 +22,13 @@ import (
 // routes — in particular it can't regenerate the user's long-lived API token.
 const tokenTypeMCPAccess = "mcp_access"
 
-func (a *App) issueToken(userID string) (string, error) {
+// issueToken mints a 30-day browser session JWT. tokenVersion is the user's
+// current revocation counter, stamped as "ver" so the session is rejected the
+// moment the counter is bumped (see resolveToken / handleRevokeSessions).
+func (a *App) issueToken(userID string, tokenVersion int) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": userID,
+		"ver": tokenVersion,
 		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}
@@ -34,11 +38,14 @@ func (a *App) issueToken(userID string) (string, error) {
 
 // issueMCPAccessToken mints a 1-hour OAuth access token tagged with the
 // mcp_access purpose claim. Used only by the OAuth token endpoint; the claim
-// confines the token to the /mcp gate.
-func (a *App) issueMCPAccessToken(userID string) (string, error) {
+// confines the token to the /mcp gate. It also carries "ver" so a session
+// revocation invalidates outstanding MCP access tokens (the client then
+// silently refreshes and receives one stamped with the new version).
+func (a *App) issueMCPAccessToken(userID string, tokenVersion int) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": userID,
 		"typ": tokenTypeMCPAccess,
+		"ver": tokenVersion,
 		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(time.Hour).Unix(),
 	}
@@ -46,10 +53,11 @@ func (a *App) issueMCPAccessToken(userID string) (string, error) {
 	return t.SignedString([]byte(a.Cfg.JWTSecret))
 }
 
-// parseToken validates a JWT and returns its subject and "typ" claim. typ is
-// empty for ordinary session/API tokens and "mcp_access" for OAuth access
-// tokens.
-func (a *App) parseToken(tok string) (sub, typ string, err error) {
+// parseToken validates a JWT and returns its subject, "typ" claim, and "ver"
+// claim. typ is empty for ordinary session/API tokens and "mcp_access" for
+// OAuth access tokens. A token minted before "ver" existed decodes as version
+// 0, matching the column default so pre-upgrade sessions keep working.
+func (a *App) parseToken(tok string) (sub, typ string, ver int, err error) {
 	parsed, err := jwt.Parse(tok, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
@@ -57,18 +65,22 @@ func (a *App) parseToken(tok string) (sub, typ string, err error) {
 		return []byte(a.Cfg.JWTSecret), nil
 	})
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 	claims, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok || !parsed.Valid {
-		return "", "", errors.New("invalid token")
+		return "", "", 0, errors.New("invalid token")
 	}
 	sub, _ = claims["sub"].(string)
 	if sub == "" {
-		return "", "", errors.New("missing sub")
+		return "", "", 0, errors.New("missing sub")
 	}
 	typ, _ = claims["typ"].(string)
-	return sub, typ, nil
+	// JSON numbers decode to float64 in MapClaims; absent "ver" stays 0.
+	if v, ok := claims["ver"].(float64); ok {
+		ver = int(v)
+	}
+	return sub, typ, ver, nil
 }
 
 // authenticateRequest accepts:
@@ -111,7 +123,7 @@ func (a *App) authenticateRequest(r *http.Request, allowMCPScope bool) (*User, s
 // resolves to a user.
 func (a *App) resolveToken(ctx context.Context, tok string, allowMCPScope bool) (*User, string, error) {
 	if strings.Count(tok, ".") == 2 {
-		userID, typ, err := a.parseToken(tok)
+		userID, typ, ver, err := a.parseToken(tok)
 		if err != nil {
 			return nil, "invalid token", nil
 		}
@@ -124,6 +136,11 @@ func (a *App) resolveToken(ctx context.Context, tok string, allowMCPScope bool) 
 		}
 		if err != nil {
 			return nil, "", err
+		}
+		// Session revocation: a token signed with a stale version (the user hit
+		// "sign out everywhere" since it was issued) is no longer valid.
+		if ver != u.TokenVersion {
+			return nil, "token revoked", nil
 		}
 		return u, "", nil
 	}
@@ -255,8 +272,8 @@ func generateAPIToken() (string, error) {
 func (a *App) userByAPIToken(ctx context.Context, token string) (*User, error) {
 	u := &User{}
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token, status, is_admin, created_at FROM users WHERE api_token = $1`, token).
-		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt)
+		`SELECT id, email, username, api_token, status, is_admin, created_at, token_version FROM users WHERE api_token = $1`, token).
+		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -266,8 +283,8 @@ func (a *App) userByAPIToken(ctx context.Context, token string) (*User, error) {
 func (a *App) userByID(ctx context.Context, id string) (*User, error) {
 	u := &User{}
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token, status, is_admin, created_at FROM users WHERE id = $1`, id).
-		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt)
+		`SELECT id, email, username, api_token, status, is_admin, created_at, token_version FROM users WHERE id = $1`, id).
+		Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +352,8 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := a.issueToken(id)
+	// A brand-new user starts at token_version 0 (the column default).
+	tok, err := a.issueToken(id, 0)
 	if err != nil {
 		serverErr(w, r, err, "token error")
 		return
@@ -369,10 +387,11 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var (
 		id, username, hash, apiTok, status string
 		isAdmin                            bool
+		tokenVersion                       int
 	)
 	err := a.DB.QueryRowContext(r.Context(),
-		`SELECT id, username, password_hash, api_token, status, is_admin FROM users WHERE email = $1`, req.Email).
-		Scan(&id, &username, &hash, &apiTok, &status, &isAdmin)
+		`SELECT id, username, password_hash, api_token, status, is_admin, token_version FROM users WHERE email = $1`, req.Email).
+		Scan(&id, &username, &hash, &apiTok, &status, &isAdmin, &tokenVersion)
 	if err == sql.ErrNoRows {
 		metrics.LoginsTotal.WithLabelValues("password", "failure").Inc()
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
@@ -399,7 +418,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	metrics.LoginsTotal.WithLabelValues("password", "success").Inc()
 
-	tok, err := a.issueToken(id)
+	tok, err := a.issueToken(id, tokenVersion)
 	if err != nil {
 		serverErr(w, r, err, "token error")
 		return
@@ -434,6 +453,23 @@ func (a *App) handleRegenerateAPIToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"apiToken": newTok})
+}
+
+// handleRevokeSessions implements "sign out everywhere": it bumps the user's
+// token_version, which immediately invalidates every JWT previously issued to
+// them — the caller's current session included. The frontend follows up by
+// clearing its local token and routing to /login. Outstanding MCP access tokens
+// also stop working until the client refreshes (and is re-stamped with the new
+// version); the underlying OAuth refresh token is unaffected, so a connected app
+// reconnects on its own rather than being permanently disconnected.
+func (a *App) handleRevokeSessions(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	if _, err := a.DB.ExecContext(r.Context(),
+		`UPDATE users SET token_version = token_version + 1 WHERE id = $1`, user.ID); err != nil {
+		serverErr(w, r, err, "db error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type authConfigResp struct {

@@ -433,7 +433,17 @@ type oauthTokenPair struct {
 }
 
 func (a *App) issueOAuthTokenPair(ctx context.Context, userID string) (*oauthTokenPair, error) {
-	accessToken, err := a.issueMCPAccessToken(userID)
+	// Stamp the access token with the user's current revocation counter so a
+	// "sign out everywhere" invalidates it (the client then refreshes and is
+	// re-issued one with the new version). Token issuance is infrequent, so the
+	// extra read is cheap and keeps both callers free of the version plumbing.
+	var tokenVersion int
+	if err := a.DB.QueryRowContext(ctx,
+		`SELECT token_version FROM users WHERE id = $1`, userID,
+	).Scan(&tokenVersion); err != nil {
+		return nil, fmt.Errorf("token version: %w", err)
+	}
+	accessToken, err := a.issueMCPAccessToken(userID, tokenVersion)
 	if err != nil {
 		return nil, fmt.Errorf("access token: %w", err)
 	}

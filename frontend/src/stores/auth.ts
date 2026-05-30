@@ -111,9 +111,18 @@ export const useAuthStore = defineStore('auth', () => {
     return r.apiToken
   }
 
+  // signOutEverywhere bumps the server-side token_version, invalidating every
+  // JWT issued to this user (including the one in this tab). It then tears down
+  // local state via doLogout, returning true when an upstream OIDC redirect is
+  // already in flight (caller should NOT push a route in that case).
+  async function signOutEverywhere(): Promise<boolean> {
+    await api.revokeSessions()
+    return doLogout()
+  }
+
   return {
     user, token, mode, marketplaceName, defaultLicense, userApprovalRequired,
     ensureMode, login, register, loginViaOIDC, logout, doLogout, setSession,
-    refreshUser, regenerateToken,
+    refreshUser, regenerateToken, signOutEverywhere,
   }
 })

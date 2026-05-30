@@ -64,6 +64,10 @@ type User struct {
 	Status    string    `json:"status"`
 	IsAdmin   bool      `json:"isAdmin"`
 	CreatedAt time.Time `json:"createdAt"`
+	// TokenVersion is the user's current session-revocation counter. It is
+	// stamped into issued JWTs as the "ver" claim and compared on each request;
+	// it never leaves the backend, hence json:"-".
+	TokenVersion int `json:"-"`
 }
 
 type Plugin struct {

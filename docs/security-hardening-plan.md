@@ -1,6 +1,6 @@
 # Security hardening plan — session & token layer
 
-Status: **in progress** (S1 + S2 done; S3–S8 pending) · Last reviewed: 2026-05-30
+Status: **in progress** (S1 + S2 + S3 done; S4–S8 pending) · Last reviewed: 2026-05-31
 
 ## Scope
 
@@ -66,7 +66,19 @@ and the same OAuth/MCP machinery.
 
 ### P1 — high value, moderate effort
 
-#### S3. No session / token revocation ("logout" is client-side only)
+#### S3. No session / token revocation ("logout" is client-side only) ✅ DONE
+- **Status:** Implemented. Migration `0014_token_version.sql` adds a per-user
+  `token_version`; it's stamped into session JWTs and OAuth access tokens as the
+  `ver` claim and compared in `resolveToken` (absent ⇒ 0, so pre-upgrade tokens
+  keep working). A new `POST /api/me/sessions/revoke` ("sign out everywhere")
+  bumps the counter, invalidating all of the user's tokens; the SPA exposes it
+  in the connect tab and logs out locally, and `App.vue` now logs out + redirects
+  on a startup 401 so *other* devices clean up on reload. Verified end-to-end
+  against Postgres (register → /me 200 → revoke 204 → /me 401 "token revoked").
+- **Scope note:** Admin reject/delete/demote do **not** bump the version — `status`
+  and `is_admin` are read fresh from the row each request, so those already take
+  effect immediately. `token_version` covers only the case nothing else does:
+  revoking the sessions of an account that stays approved (lost/leaked token).
 - **Severity:** High
 - **Where:** `auth.go` `issueToken`/`parseToken`; frontend `stores/auth.ts`
   `logout()` (clears `localStorage` only).

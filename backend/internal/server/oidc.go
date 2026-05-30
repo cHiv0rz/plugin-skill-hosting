@@ -288,7 +288,7 @@ func (a *App) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Normal OIDC flow: issue a session JWT and redirect to the SPA.
-	jwt, err := a.issueToken(user.ID)
+	jwt, err := a.issueToken(user.ID, user.TokenVersion)
 	if err != nil {
 		a.oidcFail(w, r, "token issue failed")
 		return
@@ -351,9 +351,9 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 	// 1) match by (issuer, subject) — already linked
 	u := &User{}
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token, status, is_admin, created_at FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2`,
+		`SELECT id, email, username, api_token, status, is_admin, created_at, token_version FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2`,
 		issuer, claims.Sub,
-	).Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt)
+	).Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
 	if err == nil {
 		if u.Status == UserStatusRejected {
 			return nil, errors.New("account has been rejected")
@@ -371,8 +371,8 @@ func (a *App) findOrCreateOIDCUser(ctx context.Context, issuer string, claims *o
 	email := strings.ToLower(strings.TrimSpace(claims.Email))
 	if email != "" && (claims.EmailVerified == nil || *claims.EmailVerified) {
 		err = a.DB.QueryRowContext(ctx,
-			`SELECT id, email, username, api_token, status, is_admin, created_at FROM users WHERE email = $1`, email,
-		).Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt)
+			`SELECT id, email, username, api_token, status, is_admin, created_at, token_version FROM users WHERE email = $1`, email,
+		).Scan(&u.ID, &u.Email, &u.Username, &u.APIToken, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
 		if err == nil {
 			if u.Status == UserStatusRejected {
 				return nil, errors.New("account has been rejected")

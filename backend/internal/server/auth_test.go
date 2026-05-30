@@ -44,34 +44,37 @@ func TestSlugRegex(t *testing.T) {
 
 func TestIssueAndParseTokenRoundtrip(t *testing.T) {
 	a := &App{Cfg: config.Config{JWTSecret: "test-secret-do-not-use"}}
-	tok, err := a.issueToken("user-123")
+	tok, err := a.issueToken("user-123", 7)
 	if err != nil {
 		t.Fatalf("issueToken: %v", err)
 	}
-	got, _, err := a.parseToken(tok)
+	got, _, ver, err := a.parseToken(tok)
 	if err != nil {
 		t.Fatalf("parseToken: %v", err)
 	}
 	if got != "user-123" {
-		t.Errorf("parseToken returned %q, want user-123", got)
+		t.Errorf("parseToken returned sub %q, want user-123", got)
+	}
+	if ver != 7 {
+		t.Errorf("parseToken returned ver %d, want 7", ver)
 	}
 }
 
 func TestParseTokenRejectsWrongSecret(t *testing.T) {
 	signer := &App{Cfg: config.Config{JWTSecret: "secret-A"}}
 	verifier := &App{Cfg: config.Config{JWTSecret: "secret-B"}}
-	tok, err := signer.issueToken("user-123")
+	tok, err := signer.issueToken("user-123", 0)
 	if err != nil {
 		t.Fatalf("issueToken: %v", err)
 	}
-	if _, _, err := verifier.parseToken(tok); err == nil {
+	if _, _, _, err := verifier.parseToken(tok); err == nil {
 		t.Error("parseToken accepted token signed with a different secret")
 	}
 }
 
 func TestParseTokenRejectsGarbage(t *testing.T) {
 	a := &App{Cfg: config.Config{JWTSecret: "x"}}
-	if _, _, err := a.parseToken("not-a-jwt"); err == nil {
+	if _, _, _, err := a.parseToken("not-a-jwt"); err == nil {
 		t.Error("parseToken accepted non-JWT input")
 	}
 }

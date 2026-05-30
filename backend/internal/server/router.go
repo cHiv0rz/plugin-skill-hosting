@@ -101,6 +101,7 @@ func NewRouter(app *App) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(app.requireApprovedMiddleware)
 				r.Post("/me/token/regenerate", app.handleRegenerateAPIToken)
+				r.Post("/me/sessions/revoke", app.handleRevokeSessions)
 				r.Get("/me/deleted-plugins", app.handleListDeletedPlugins)
 				r.Group(func(r chi.Router) {
 					r.Use(app.requireAdminMiddleware)

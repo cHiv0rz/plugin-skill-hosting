@@ -51,6 +51,9 @@ var migration0012 string
 //go:embed migrations/0013_user_soft_delete.sql
 var migration0013 string
 
+//go:embed migrations/0014_token_version.sql
+var migration0014 string
+
 // Open opens the application's *sql.DB through pgx's database/sql adapter and
 // configures it for use behind a transaction-pool PgBouncer (the deployment in
 // front of OVH Managed PG, and the common HA layout in general).
@@ -136,6 +139,9 @@ func Migrate(db *sql.DB) error {
 	}
 	if _, err := db.Exec(migration0013); err != nil {
 		return fmt.Errorf("0013_user_soft_delete: %w", err)
+	}
+	if _, err := db.Exec(migration0014); err != nil {
+		return fmt.Errorf("0014_token_version: %w", err)
 	}
 	return nil
 }

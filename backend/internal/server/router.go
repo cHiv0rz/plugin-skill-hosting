@@ -62,6 +62,8 @@ func NewRouter(app *App) http.Handler {
 
 	// OAuth 2.1 endpoints — unauthenticated; credential validation is internal.
 	r.Get("/.well-known/oauth-authorization-server", app.handleOAuthMeta)
+	r.Get("/.well-known/oauth-protected-resource", app.handleOAuthProtectedResource)
+	r.Get("/.well-known/oauth-protected-resource/mcp", app.handleOAuthProtectedResource)
 	r.Get("/oauth/authorize", app.handleOAuthAuthorize)
 	r.Post("/oauth/authorize", app.handleOAuthAuthorizeSubmit)
 	r.Post("/oauth/token", app.handleOAuthToken)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -205,6 +206,60 @@ func TestMCPTokenGateMiddleware_ChallengesWithBearer(t *testing.T) {
 	}
 	if got := rec.Header().Get("WWW-Authenticate"); !strings.HasPrefix(got, "Bearer") {
 		t.Errorf("WWW-Authenticate = %q, want Bearer challenge", got)
+	}
+}
+
+func TestMCPTokenGate_AdvertisesResourceMetadataWhenOAuthConfigured(t *testing.T) {
+	a := &App{Cfg: config.Config{
+		MCPOAuthClientID: "claude",
+		PublicBaseURL:    "https://ai-plugins.oglimmer.com/",
+	}}
+	h := a.mcpTokenGateMiddleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("downstream handler should not run on missing auth")
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+
+	got := rec.Header().Get("WWW-Authenticate")
+	want := `Bearer realm="plugin-marketplace", resource_metadata="https://ai-plugins.oglimmer.com/.well-known/oauth-protected-resource/mcp"`
+	if got != want {
+		t.Errorf("WWW-Authenticate = %q, want %q", got, want)
+	}
+}
+
+func TestHandleOAuthProtectedResource(t *testing.T) {
+	a := &App{Cfg: config.Config{
+		MCPOAuthClientID: "claude",
+		PublicBaseURL:    "https://ai-plugins.oglimmer.com/",
+	}}
+	rec := httptest.NewRecorder()
+	a.handleOAuthProtectedResource(rec, httptest.NewRequest("GET", "/.well-known/oauth-protected-resource", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var meta struct {
+		Resource               string   `json:"resource"`
+		AuthorizationServers   []string `json:"authorization_servers"`
+		BearerMethodsSupported []string `json:"bearer_methods_supported"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&meta); err != nil {
+		t.Fatalf("decode metadata: %v", err)
+	}
+	if meta.Resource != "https://ai-plugins.oglimmer.com/mcp" {
+		t.Errorf("resource = %q, want the /mcp endpoint", meta.Resource)
+	}
+	if len(meta.AuthorizationServers) != 1 || meta.AuthorizationServers[0] != "https://ai-plugins.oglimmer.com" {
+		t.Errorf("authorization_servers = %v, want [base]", meta.AuthorizationServers)
+	}
+}
+
+func TestHandleOAuthProtectedResource_404WhenOAuthDisabled(t *testing.T) {
+	a := &App{Cfg: config.Config{PublicBaseURL: "https://ai-plugins.oglimmer.com"}}
+	rec := httptest.NewRecorder()
+	a.handleOAuthProtectedResource(rec, httptest.NewRequest("GET", "/.well-known/oauth-protected-resource", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 when OAuth not configured", rec.Code)
 	}
 }
 

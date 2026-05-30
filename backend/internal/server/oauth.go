@@ -94,6 +94,40 @@ func (a *App) handleOAuthMeta(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleOAuthProtectedResource serves GET /.well-known/oauth-protected-resource
+// (RFC 9728). It advertises which authorization server protects the /mcp
+// endpoint so MCP clients can discover where to run the OAuth flow. The /mcp 401
+// challenge points here via the resource_metadata parameter. Registered on both
+// the bare path and the /mcp-suffixed path so clients that derive the metadata
+// URL from the resource identifier (RFC 9728 §3.1) and those that read the
+// challenge pointer both resolve it.
+func (a *App) handleOAuthProtectedResource(w http.ResponseWriter, r *http.Request) {
+	if a.Cfg.MCPOAuthClientID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	base := strings.TrimRight(a.Cfg.PublicBaseURL, "/")
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"resource":                 base + "/mcp",
+		"authorization_servers":    []string{base},
+		"bearer_methods_supported": []string{"header"},
+	})
+}
+
+// mcpAuthChallenge builds the WWW-Authenticate value for an unauthenticated /mcp
+// request. When OAuth is configured it appends the RFC 9728 resource_metadata
+// pointer so MCP clients can discover the authorization server; otherwise it
+// falls back to the bare Bearer challenge.
+func (a *App) mcpAuthChallenge() string {
+	const realm = `Bearer realm="plugin-marketplace"`
+	if a.Cfg.MCPOAuthClientID == "" {
+		return realm
+	}
+	base := strings.TrimRight(a.Cfg.PublicBaseURL, "/")
+	return fmt.Sprintf("%s, resource_metadata=%q", realm,
+		base+"/.well-known/oauth-protected-resource/mcp")
+}
+
 // handleOAuthAuthorize serves GET /oauth/authorize.
 // In password mode it renders an HTML login form.
 // In OIDC mode it stores the OAuth params in oauth_pending and redirects to the

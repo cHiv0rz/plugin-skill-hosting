@@ -208,7 +208,7 @@ func (a *App) mcpTokenGateMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		if u == nil {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="plugin-marketplace"`)
+			w.Header().Set("WWW-Authenticate", a.mcpAuthChallenge())
 			if errMsg == "" {
 				errMsg = "authentication required"
 			}

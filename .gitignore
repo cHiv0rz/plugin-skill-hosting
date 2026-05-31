@@ -9,3 +9,6 @@ frontend/dist/
 .DS_Store
 *.log
 .antigravitycli/
+
+# Packaged Helm charts (built into a temp dir at release time)
+*.tgz

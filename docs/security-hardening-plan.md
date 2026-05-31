@@ -1,6 +1,7 @@
 # Security hardening plan — session & token layer
 
-Status: **S1–S8 done** (only the deferred S5 browser session-shortening remains, optional) · Last reviewed: 2026-05-31
+Status: **S1–S8 done.** Remaining: two deferred S5 sub-items — (3) browser
+short-token + refresh, and (4) optional `HttpOnly`-cookie session. · Last reviewed: 2026-05-31
 
 ## Scope
 
@@ -142,10 +143,12 @@ and the same OAuth/MCP machinery.
   rendered via Vue's auto-escaping `{{ }}`. So user markdown is never executed as
   HTML today. Defense-in-depth **CSP/security headers were added** (see S7) to
   block inline/injected script even if a future change introduces a sink.
-  - **Deferred (tracked, not done):** shortening the browser session to a
-    short-lived access token + refresh (item 3 below). It's a sizable change and
-    the immediate XSS exposure is low (no sink + CSP + S3 revocation now exists),
-    so it's intentionally left as a follow-up rather than bundled here.
+  - **Deferred (tracked, not done) — two items:** (3) shortening the browser
+    session to a short-lived access token + server-side refresh, and (4) moving
+    the session into an `HttpOnly` cookie. Both are sizable and the immediate XSS
+    exposure is low (no sink + CSP + S3 revocation now exists), so they're
+    intentionally left as follow-ups. Do #3 first (high value, moderate effort);
+    #4 is the larger, optional last step and depends on #3 + CSRF protection.
 - **Severity:** Medium
 - **Where:** 30-day lifetime `auth.go:22`; stored in `localStorage`
   (`frontend/src/stores/auth.ts`, `frontend/src/api.ts`).
@@ -154,17 +157,18 @@ and the same OAuth/MCP machinery.
   combined with the 30-day, currently-unrevocable token (S3), one XSS yields a
   month-long credential. Compounds S3.
 - **Fix (layered):**
-  1. **Confirm/enforce markdown sanitization** on every render path of
-     user-supplied skill content (audit the Milkdown/Crepe pipeline; ensure no
-     raw HTML passthrough). This is the highest-leverage XSS control.
-  2. Add **security headers** (see S7) including a CSP that blocks inline/script
-     injection.
-  3. Shorten the session: pair a short-lived (e.g. 1 h) access token with a
-     server-side refresh — the OAuth path already implements exactly this
-     pattern (`issueOAuthTokenPair`), so reuse it for the browser. This also
+  1. ✅ **Confirm/enforce markdown sanitization** on every render path of
+     user-supplied skill content (audited the Milkdown/Crepe pipeline; no raw
+     HTML passthrough, no `v-html`). Done — no sink found.
+  2. ✅ Add **security headers** (see S7) including a CSP that blocks inline/script
+     injection. Done.
+  3. ⏳ **DEFERRED** — Shorten the session: pair a short-lived (e.g. 1 h) access
+     token with a server-side refresh — the OAuth path already implements exactly
+     this pattern (`issueOAuthTokenPair`), so reuse it for the browser. This also
      makes S3's revocation cheap (revoke at refresh, like the OAuth gate does).
-  4. Optionally move the session to an `HttpOnly`, `Secure`, `SameSite` cookie so
-     script can't read it (requires the S2 CORS tightening and CSRF protection).
+  4. ⏳ **DEFERRED (optional, after #3)** — Move the session to an `HttpOnly`,
+     `Secure`, `SameSite` cookie so script can't read it (requires the S2 CORS
+     tightening and CSRF protection).
 - **Effort:** sanitization audit ~0.5 day; refresh-token rotation ~1–2 days;
   cookie migration ~2 days (larger, do last).
 - **Verification:** XSS probe in a skill body cannot read the token; expired
@@ -268,8 +272,9 @@ and the same OAuth/MCP machinery.
 5. ✅ **S6 (rate limiting)** — done.
 6. ✅ **S8 (OIDC unverified-email linking)** — done (+ fixed a latent S4
    OIDC-login regression found along the way).
-7. **Remaining:** only the **deferred S5 session-shortening** (browser
-   short-token + refresh), optional, when prioritised.
+7. **Remaining — deferred S5 sub-items:** (3) browser short-token + server-side
+   refresh (high value, moderate effort), then (4) optional `HttpOnly`-cookie
+   session migration (larger, depends on #3 + CSRF). Both when prioritised.
 
 ## Out of scope (password mode is dev-only)
 

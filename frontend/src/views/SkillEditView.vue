@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, computed, watch, nextTick } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
-import { api, errMsg } from '../api'
+import { api, errMsg, slugError } from '../api'
 import type { ValidationReport, FindingSeverity, Finding } from '../types'
 import { useConfirm } from '../composables/useConfirm'
 import {
@@ -31,6 +31,7 @@ const description = ref('')
 const body = ref(defaultBody())
 const extraFrontmatter = ref('')
 const error = ref('')
+const nameError = ref('')
 const loading = ref(false)
 const importing = ref(false)
 const importInput = ref<HTMLInputElement | null>(null)
@@ -292,6 +293,14 @@ async function onImportFile(ev: Event) {
 
 async function submit() {
   error.value = ''
+  nameError.value = ''
+  if (!isEdit.value) {
+    const slugErr = slugError(name.value)
+    if (slugErr) {
+      nameError.value = slugErr
+      return
+    }
+  }
   loading.value = true
   try {
     if (isEdit.value) {
@@ -533,8 +542,12 @@ watch(() => props.skillName, load)
           pattern="[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]"
           placeholder="my-skill-slug"
           class="se-field__input"
+          :class="{ 'se-field__input--invalid': nameError }"
+          :aria-invalid="nameError ? 'true' : undefined"
+          @input="nameError = ''"
         />
-        <p v-if="!isEdit" class="se-field__hint">lowercase letters, digits, hyphens · used as the skill directory name</p>
+        <p v-if="!isEdit && nameError" class="se-field__error">{{ nameError }}</p>
+        <p v-else-if="!isEdit" class="se-field__hint">lowercase letters, digits, hyphens · used as the skill directory name</p>
       </div>
 
       <div class="se-field">
@@ -1095,6 +1108,19 @@ watch(() => props.skillName, load)
   margin: 6px 0 0;
   font-size: 11.5px;
   color: var(--muted);
+  letter-spacing: 0.02em;
+  line-height: 1.55;
+}
+.se-field__input--invalid {
+  border-color: var(--rust);
+}
+.se-field__input--invalid:focus {
+  border-color: var(--rust);
+}
+.se-field__error {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--rust);
   letter-spacing: 0.02em;
   line-height: 1.55;
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { errMsg } from '../api'
+import { errMsg, slugError } from '../api'
 import ErrorAlert from '../components/ErrorAlert.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -17,10 +17,17 @@ const homepage = ref('')
 const license = ref(authStore.defaultLicense)
 authStore.ensureMode().then(() => { license.value = authStore.defaultLicense })
 const error = ref('')
+const nameError = ref('')
 const loading = ref(false)
 
 async function submit() {
   error.value = ''
+  nameError.value = ''
+  const slugErr = slugError(name.value)
+  if (slugErr) {
+    nameError.value = slugErr
+    return
+  }
   loading.value = true
   try {
     const p = await pluginStore.createPlugin({
@@ -45,7 +52,15 @@ async function submit() {
   <div class="card">
     <form @submit.prevent="submit">
       <label>Name (slug, lowercase, [a-z0-9-])</label>
-      <input v-model="name" required pattern="[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]" />
+      <input
+        v-model="name"
+        required
+        pattern="[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]"
+        :class="{ 'input--invalid': nameError }"
+        :aria-invalid="nameError ? 'true' : undefined"
+        @input="nameError = ''"
+      />
+      <p v-if="nameError" class="field-error">{{ nameError }}</p>
 
       <label>Description</label>
       <input v-model="description" required />
@@ -76,3 +91,15 @@ async function submit() {
     </form>
   </div>
 </template>
+
+<style scoped>
+.input--invalid {
+  border-color: var(--rust);
+}
+.field-error {
+  margin: 6px 0 14px;
+  font-size: 12px;
+  color: var(--rust);
+  font-family: var(--mono);
+}
+</style>

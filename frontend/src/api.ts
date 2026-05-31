@@ -49,6 +49,19 @@ export class ApiError extends Error {
   }
 }
 
+// SLUG_RE mirrors the backend slug rule (app.go slugRe): a lowercase slug of
+// 3–64 chars that starts and ends alphanumeric. Plain regex literal — no `u`/`v`
+// flag — so it parses everywhere; the HTML `pattern` attribute is just a hint.
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/
+
+// slugError returns a human-readable validation message for an invalid slug, or
+// '' when the value is acceptable. Callers use it to give in-UI feedback before
+// hitting the API, instead of relying on the browser's native pattern bubble.
+export function slugError(value: string): string {
+  if (SLUG_RE.test(value)) return ''
+  return 'name must be a lowercase slug — 3–64 characters, letters/digits/hyphens, starting and ending with a letter or digit'
+}
+
 export function errMsg(e: unknown, fallback = 'something went wrong'): string {
   if (e instanceof Error) return e.message || fallback
   if (typeof e === 'string') return e

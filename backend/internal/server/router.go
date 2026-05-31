@@ -2,10 +2,12 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/go-chi/httprate"
 
 	"marketplace/internal/metrics"
 )
@@ -72,26 +74,41 @@ func NewRouter(app *App) http.Handler {
 	})
 
 	// OAuth 2.1 endpoints — unauthenticated; credential validation is internal.
+	// Discovery is cheap JSON hit by clients during setup, left unthrottled.
 	r.Get("/.well-known/oauth-authorization-server", app.handleOAuthMeta)
 	r.Get("/.well-known/oauth-protected-resource", app.handleOAuthProtectedResource)
 	r.Get("/.well-known/oauth-protected-resource/mcp", app.handleOAuthProtectedResource)
-	r.Get("/oauth/authorize", app.handleOAuthAuthorize)
-	r.Post("/oauth/authorize", app.handleOAuthAuthorizeSubmit)
-	r.Post("/oauth/token", app.handleOAuthToken)
+	// authorize/token handle auth codes, refresh tokens, and the client secret,
+	// so throttle them per client IP. 60/min is far above any real MCP client
+	// (a handful of calls per session) but caps runaway/abusive loops. Keyed by
+	// the real client IP thanks to the RealIP middleware above. Volumetric DoS
+	// stays the edge (ingress/CDN)'s job — this is targeted abuse hardening.
+	r.Group(func(r chi.Router) {
+		r.Use(httprate.LimitByIP(60, time.Minute))
+		r.Get("/oauth/authorize", app.handleOAuthAuthorize)
+		r.Post("/oauth/authorize", app.handleOAuthAuthorizeSubmit)
+		r.Post("/oauth/token", app.handleOAuthToken)
+	})
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/version", app.handleVersion)
 		r.Get("/auth/config", app.handleAuthConfig)
 
-		switch app.Cfg.AuthMode {
-		case "password":
-			r.Post("/auth/register", app.handleRegister)
-			r.Post("/auth/login", app.handleLogin)
-		case "oidc":
-			r.Get("/auth/oidc/login", app.handleOIDCLogin)
-			r.Get("/auth/oidc/callback", app.handleOIDCCallback)
-			r.Get("/auth/oidc/logout", app.handleOIDCLogout)
-		}
+		// Sign-in endpoints (OIDC redirect/callback in production; the dev-only
+		// password flow). Per-IP throttle blunts credential-stuffing/abuse;
+		// 60/min stays clear of an org's shared-egress-IP login surge.
+		r.Group(func(r chi.Router) {
+			r.Use(httprate.LimitByIP(60, time.Minute))
+			switch app.Cfg.AuthMode {
+			case "password":
+				r.Post("/auth/register", app.handleRegister)
+				r.Post("/auth/login", app.handleLogin)
+			case "oidc":
+				r.Get("/auth/oidc/login", app.handleOIDCLogin)
+				r.Get("/auth/oidc/callback", app.handleOIDCCallback)
+				r.Get("/auth/oidc/logout", app.handleOIDCLogout)
+			}
+		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(app.authMiddleware)
@@ -101,8 +118,14 @@ func NewRouter(app *App) http.Handler {
 
 			r.Group(func(r chi.Router) {
 				r.Use(app.requireApprovedMiddleware)
-				r.Post("/me/token/regenerate", app.handleRegenerateAPIToken)
-				r.Post("/me/sessions/revoke", app.handleRevokeSessions)
+				// Sensitive self-service actions (mint a new API token / revoke
+				// all sessions) — a tighter per-IP cap; these are deliberate,
+				// infrequent clicks, never hot paths.
+				r.Group(func(r chi.Router) {
+					r.Use(httprate.LimitByIP(20, time.Minute))
+					r.Post("/me/token/regenerate", app.handleRegenerateAPIToken)
+					r.Post("/me/sessions/revoke", app.handleRevokeSessions)
+				})
 				r.Get("/me/deleted-plugins", app.handleListDeletedPlugins)
 				r.Group(func(r chi.Router) {
 					r.Use(app.requireAdminMiddleware)

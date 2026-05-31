@@ -1,6 +1,6 @@
 # Security hardening plan — session & token layer
 
-Status: **in progress** (S1–S5, S7 done; S6, S8 + S5 session-shortening pending) · Last reviewed: 2026-05-31
+Status: **in progress** (S1–S7 done; S8 + deferred S5 session-shortening pending) · Last reviewed: 2026-05-31
 
 ## Scope
 
@@ -172,7 +172,17 @@ and the same OAuth/MCP machinery.
 
 ### P2 — defense in depth
 
-#### S6. No rate limiting on shared/abuse-prone endpoints
+#### S6. No rate limiting on shared/abuse-prone endpoints ✅ DONE
+- **Status:** Implemented with `go-chi/httprate` per-IP limiters (keyed off the
+  real client IP via the existing `RealIP` middleware), scoped to the sensitive
+  endpoints rather than globally — the marketplace's org users share egress IPs
+  and the SPA/git/MCP paths are chatty, so a global per-IP cap would throttle
+  legitimate use; volumetric DoS stays the ingress/CDN's job. Buckets:
+  `/oauth/authorize` + `/oauth/token` and the sign-in endpoints (`/api/auth/*`)
+  at **60/min**, the self-service `/me/token/regenerate` + `/me/sessions/revoke`
+  at **20/min**. Discovery `.well-known` and read/data APIs are left unthrottled.
+  Verified by a burst test asserting 429 past the bucket. (Limits are hardcoded;
+  making them env-tunable is a possible follow-up.)
 - **Severity:** Medium
 - **Where:** none of the routes in `router.go` are throttled.
 - **Risk:** Independent of the (out-of-scope) password brute-force concern,
@@ -235,9 +245,10 @@ and the same OAuth/MCP machinery.
 2. ✅ **S3 (token_version revocation)** — done.
 3. ✅ **S4 (encrypt API tokens at rest)** — done.
 4. ✅ **S5 audit + S7 headers** — done (no XSS sink found; CSP added).
-5. **Remaining:** **S6** (rate limiting) and **S8** (OIDC unverified-email
-   linking) — small follow-ups — plus the **deferred S5 session-shortening**
-   (browser short-token + refresh) when prioritised.
+5. ✅ **S6 (rate limiting)** — done.
+6. **Remaining:** **S8** (OIDC unverified-email linking — ~1hr) plus the
+   **deferred S5 session-shortening** (browser short-token + refresh) when
+   prioritised.
 
 ## Out of scope (password mode is dev-only)
 

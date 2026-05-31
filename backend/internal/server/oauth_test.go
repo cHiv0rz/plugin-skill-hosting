@@ -510,3 +510,26 @@ func TestDiscoveryRoutesAre404WhenOAuthDisabled(t *testing.T) {
 		}
 	}
 }
+
+// The OAuth token endpoint must shed load past its per-IP rate limit. Every
+// request here fails client validation (no creds) and returns before any DB
+// access, but the limiter middleware counts each one — so a burst from a single
+// IP eventually trips 429 regardless of the handler's own response.
+func TestRateLimitOAuthTokenEndpoint(t *testing.T) {
+	h := NewRouter(oauthTestApp())
+	got429 := false
+	for i := 0; i < 80; i++ {
+		rec := httptest.NewRecorder()
+		// Fixed RemoteAddr → all requests share one per-IP bucket.
+		req := httptest.NewRequest("POST", "/oauth/token", nil)
+		req.RemoteAddr = "203.0.113.7:5555"
+		h.ServeHTTP(rec, req)
+		if rec.Code == http.StatusTooManyRequests {
+			got429 = true
+			break
+		}
+	}
+	if !got429 {
+		t.Error("expected 429 after exceeding the per-IP limit on /oauth/token")
+	}
+}

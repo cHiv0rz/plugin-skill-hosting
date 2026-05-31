@@ -1,6 +1,6 @@
 # Security hardening plan — session & token layer
 
-Status: **in progress** (S1–S4 done; S5–S8 pending) · Last reviewed: 2026-05-31
+Status: **in progress** (S1–S5, S7 done; S6, S8 + S5 session-shortening pending) · Last reviewed: 2026-05-31
 
 ## Scope
 
@@ -135,7 +135,17 @@ and the same OAuth/MCP machinery.
 - **Effort:** ~1 day (migration + lookup change + rollout strategy).
 - **Verification:** new token authenticates; DB row shows only the hash.
 
-#### S5. Browser token lifetime is long and XSS-exfiltratable
+#### S5. Browser token lifetime is long and XSS-exfiltratable ✅ DONE (audit) · session-shortening deferred
+- **Status:** **Markdown XSS audit found no sink** — the frontend has no `v-html`
+  /`innerHTML`, the Milkdown/Crepe editor is ProseMirror-based (no raw-HTML
+  passthrough), and all skill content (body, descriptions, diff/compare) is
+  rendered via Vue's auto-escaping `{{ }}`. So user markdown is never executed as
+  HTML today. Defense-in-depth **CSP/security headers were added** (see S7) to
+  block inline/injected script even if a future change introduces a sink.
+  - **Deferred (tracked, not done):** shortening the browser session to a
+    short-lived access token + refresh (item 3 below). It's a sizable change and
+    the immediate XSS exposure is low (no sink + CSP + S3 revocation now exists),
+    so it's intentionally left as a follow-up rather than bundled here.
 - **Severity:** Medium
 - **Where:** 30-day lifetime `auth.go:22`; stored in `localStorage`
   (`frontend/src/stores/auth.ts`, `frontend/src/api.ts`).
@@ -175,7 +185,21 @@ and the same OAuth/MCP machinery.
   limiter too where available.
 - **Effort:** ~0.5 day. **Verification:** burst test returns 429 past the bucket.
 
-#### S7. Missing HTTP security headers
+#### S7. Missing HTTP security headers ✅ DONE
+- **Status:** Implemented in two layers. **(1) nginx** (`frontend/nginx.conf` +
+  `frontend/nginx-security-headers.conf`, copied to `/etc/nginx/snippets/` by the
+  Dockerfile) sets the SPA-document headers: a CSP with `script-src 'self'`
+  (Vite emits only external scripts) + `style-src 'self' 'unsafe-inline'` (the
+  Crepe editor injects inline styles), `frame-ancestors 'none'`,
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and HSTS gated
+  on `X-Forwarded-Proto: https` (so localhost dev is never pinned). The snippet is
+  re-included in the `/assets/` and `=/index.html` blocks because nginx replaces
+  rather than merges inherited `add_header`s. **(2) Backend** (`securityHeaders`
+  middleware in `router.go`) sets `nosniff` / `X-Frame-Options` / `Referrer-Policy`
+  and a strict `default-src 'none'` CSP on every API/OAuth/error response — this
+  covers production, where the Ingress routes those paths straight to the backend,
+  bypassing nginx. Verified: headers emitted live via nginx (HSTS only with XFP
+  https); backend covered by a router test.
 - **Severity:** Low–Medium
 - **Where:** `router.go` middleware stack — no security headers set.
 - **Risk:** No `Content-Security-Policy`, `X-Content-Type-Options`,
@@ -207,14 +231,13 @@ and the same OAuth/MCP machinery.
 
 ## Suggested sequencing
 
-1. **S1 + S2** — same PR, both small config guards, immediate risk reduction.
-2. **S3 (token_version revocation)** — unblocks proper logout and powers S5's
-   refresh-based revocation.
-3. **S4 (hash API tokens at rest)** — independent; schedule alongside S3's
-   migration work.
-4. **S5** — start with the markdown-sanitization audit (cheap, high value), then
-   S7 headers, then the refresh-token migration.
-5. **S6, S8** — fold in as smaller follow-ups.
+1. ✅ **S1 + S2** — config guards (done).
+2. ✅ **S3 (token_version revocation)** — done.
+3. ✅ **S4 (encrypt API tokens at rest)** — done.
+4. ✅ **S5 audit + S7 headers** — done (no XSS sink found; CSP added).
+5. **Remaining:** **S6** (rate limiting) and **S8** (OIDC unverified-email
+   linking) — small follow-ups — plus the **deferred S5 session-shortening**
+   (browser short-token + refresh) when prioritised.
 
 ## Out of scope (password mode is dev-only)
 

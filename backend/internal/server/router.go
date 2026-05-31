@@ -20,6 +20,7 @@ func NewRouter(app *App) http.Handler {
 	r.Use(skipLogger("/healthz", "/readyz"))
 	r.Use(middleware.Recoverer)
 	r.Use(metrics.HTTPMiddleware)
+	r.Use(securityHeaders)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: app.Cfg.AllowedOrigins,
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -142,6 +143,26 @@ func NewRouter(app *App) http.Handler {
 	})
 
 	return r
+}
+
+// securityHeaders adds defense-in-depth response headers to every backend
+// response. In Compose the front nginx already sets richer headers on the SPA
+// document; this covers the production path where the Ingress routes /api,
+// /oauth, /git and /mcp straight to the backend (bypassing nginx). The CSP is
+// deliberately strict — the backend only ever emits JSON or self-contained HTML
+// (the OAuth login form and error pages), which load no scripts; inline styles
+// are allowed for those pages, and form submissions are confined to same-origin.
+// HSTS is intentionally left to the TLS edge (nginx/Ingress).
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Content-Security-Policy",
+			"default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // skipLogger wraps chi's request logger so health/readiness probes don't spam logs.

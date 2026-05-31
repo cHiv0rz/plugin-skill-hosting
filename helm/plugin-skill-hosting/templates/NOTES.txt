@@ -29,7 +29,12 @@
      --from-literal=DATABASE_URL='postgres://user:pass@host:5432/db?sslmode=require' \
      --from-literal=JWT_SECRET=<32+chars> \
 {{- end }}
+     --from-literal=API_TOKEN_ENC_KEY=<optional, generate once: openssl rand -hex 32> \
      | kubeseal --format yaml | kubectl apply -f -
+
+   API_TOKEN_ENC_KEY is optional (derived from JWT_SECRET if omitted). If you set
+   it, generate it ONCE and keep it stable — re-running this with a fresh value
+   re-keys token display (auth is unaffected; tokens just need regenerating).
 
 4. Backend git data lives on PVC {{ include "psh.backend.fullname" . }}-data
 {{- if .Values.postgres.enabled }} and Postgres on {{ include "psh.postgres.fullname" . }}-data{{- end }}.

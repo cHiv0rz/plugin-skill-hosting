@@ -191,8 +191,8 @@ async function submit() {
   padding: 9px 12px;
   font-family: var(--mono);
   font-size: 12px;
-  color: #8f3115;
-  background: rgba(194, 73, 31, 0.10);
+  color: var(--error-text);
+  background: rgb(var(--rust-rgb) / 0.10);
   border-left: 2px solid var(--rust);
 }
 

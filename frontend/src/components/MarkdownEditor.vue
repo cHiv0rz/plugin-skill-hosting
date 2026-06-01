@@ -152,7 +152,7 @@ function onRawInput(ev: Event) {
 .md-mode-btn::before { display: none; }
 .md-mode-btn:hover {
   color: var(--text);
-  background: rgba(0, 1, 97, 0.05);
+  background: rgb(var(--text-rgb) / 0.05);
   transform: none;
 }
 .md-mode-btn + .md-mode-btn {

@@ -316,12 +316,12 @@ onMounted(load)
 }
 .chip--pending {
   color: var(--accent);
-  border-color: rgba(245, 165, 36, 0.5);
+  border-color: rgb(var(--accent-rgb) / 0.5);
 }
 .chip--admin {
   margin-left: 8px;
   color: var(--accent);
-  border-color: rgba(245, 165, 36, 0.5);
+  border-color: rgb(var(--accent-rgb) / 0.5);
   text-transform: uppercase;
 }
 .actions {

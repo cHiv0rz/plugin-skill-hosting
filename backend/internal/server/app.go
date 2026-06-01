@@ -56,6 +56,24 @@ const (
 	UserStatusDeleted  = "deleted"
 )
 
+// DefaultTheme is the palette a brand-new user gets; it matches the frontend's
+// default and the `theme` column's SQL default.
+const DefaultTheme = "light"
+
+// validThemes is the server-side allowlist of UI themes. It must stay in sync
+// with THEMES in frontend/src/theme.ts. Kept in the app layer (not a DB
+// constraint) so adding a palette is a code change, not a migration.
+var validThemes = map[string]bool{
+	"light":    true,
+	"dark":     true,
+	"midnight": true,
+	"sepia":    true,
+	"contrast": true,
+}
+
+// isValidTheme reports whether t is a known theme id.
+func isValidTheme(t string) bool { return validThemes[t] }
+
 type User struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
@@ -63,6 +81,7 @@ type User struct {
 	APIToken  string    `json:"apiToken,omitempty"`
 	Status    string    `json:"status"`
 	IsAdmin   bool      `json:"isAdmin"`
+	Theme     string    `json:"theme"`
 	CreatedAt time.Time `json:"createdAt"`
 	// TokenVersion is the user's current session-revocation counter. It is
 	// stamped into issued JWTs as the "ver" claim and compared on each request;

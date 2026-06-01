@@ -139,7 +139,7 @@ const { origin, exampleToken } = useApiExamples()
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--accent);
-  border: 1px solid rgba(245, 165, 36, 0.45);
+  border: 1px solid rgb(var(--accent-rgb) / 0.45);
   padding: 1px 8px;
   border-radius: 999px;
 }

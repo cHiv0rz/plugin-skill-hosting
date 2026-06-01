@@ -115,6 +115,9 @@ func NewRouter(app *App) http.Handler {
 			// /api/me stays outside the approval gate so a pending user can
 			// read their own status and the SPA can show the right screen.
 			r.Get("/me", app.handleMe)
+			// Theme preference is cosmetic and likewise allowed pre-approval, so
+			// a waiting user can still pick a palette.
+			r.Put("/me/theme", app.handleSetTheme)
 
 			r.Group(func(r chi.Router) {
 				r.Use(app.requireApprovedMiddleware)

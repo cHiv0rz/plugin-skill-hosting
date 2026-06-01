@@ -526,7 +526,7 @@ onMounted(() => {
 }
 .pd-btn--danger {
   color: var(--rust);
-  border-color: rgba(214, 90, 49, 0.5);
+  border-color: rgb(var(--rust-rgb) / 0.5);
 }
 .pd-btn--danger:hover {
   color: var(--text);
@@ -647,7 +647,7 @@ onMounted(() => {
   transition: background 0.12s ease;
 }
 .pd-table tbody tr:hover {
-  background: rgba(245, 165, 36, 0.04);
+  background: rgb(var(--accent-rgb) / 0.04);
 }
 .pd-table__name {
   width: 25%;
@@ -745,7 +745,7 @@ onMounted(() => {
 .pd-disclosure__head:hover {
   color: var(--text);
   border-color: var(--accent);
-  background: rgba(245, 165, 36, 0.04);
+  background: rgb(var(--accent-rgb) / 0.04);
 }
 .pd-disclosure__head:hover .pd-disclosure__toggle { border-color: var(--accent); }
 .pd-disclosure__head:hover .pd-disclosure__hint { color: var(--text-soft); }

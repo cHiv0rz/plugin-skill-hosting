@@ -185,7 +185,7 @@ function compareLink(version: number): string {
 .svh__head:hover {
   color: var(--text);
   border-color: var(--accent);
-  background: rgba(245, 165, 36, 0.04);
+  background: rgb(var(--accent-rgb) / 0.04);
 }
 .svh__head:hover .svh__toggle { border-color: var(--accent); }
 .svh__head:hover .svh__hint { color: var(--text-soft); }
@@ -225,7 +225,7 @@ function compareLink(version: number): string {
   vertical-align: top;
 }
 .svh__table tbody tr:last-child td { border-bottom: 0; }
-.svh__table tbody tr:hover { background: rgba(245, 172, 17, 0.08); }
+.svh__table tbody tr:hover { background: rgb(var(--accent-rgb) / 0.08); }
 
 .svh__ver {
   font-weight: 700;

@@ -41,7 +41,7 @@ const { exampleToken, hostNoScheme } = useApiExamples()
 <style scoped>
 .warn {
   border-left: 3px solid var(--rust, #d65a31);
-  background: rgba(214, 90, 49, 0.08);
+  background: rgb(var(--rust-rgb) / 0.08);
   padding: 12px 16px;
   margin: 16px 0 0;
 }

@@ -7,6 +7,9 @@ export interface User {
   apiToken?: string
   status: UserStatus
   isAdmin: boolean
+  // UI theme preference (see theme.ts). Server-persisted; may be absent on
+  // legacy cached sessions, so treat it as optional client-side.
+  theme?: string
 }
 
 export interface UserSummary {

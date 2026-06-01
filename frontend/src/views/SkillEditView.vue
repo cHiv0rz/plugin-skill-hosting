@@ -909,13 +909,13 @@ watch(() => props.skillName, load)
   height: 7px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 0 rgba(245, 165, 36, 0.55);
+  box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.55);
   animation: se-pulse 2.2s infinite;
 }
 @keyframes se-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(245, 165, 36, 0.5); }
-  70%  { box-shadow: 0 0 0 8px rgba(245, 165, 36, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(245, 165, 36, 0); }
+  0%   { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.5); }
+  70%  { box-shadow: 0 0 0 8px rgb(var(--accent-rgb) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0); }
 }
 .se-bar__actions {
   display: inline-flex;
@@ -972,7 +972,7 @@ watch(() => props.skillName, load)
 
 .se-btn--danger {
   color: var(--rust);
-  border-color: rgba(214, 90, 49, 0.5);
+  border-color: rgb(var(--rust-rgb) / 0.5);
 }
 .se-btn--danger:hover {
   color: var(--text);
@@ -1007,7 +1007,7 @@ watch(() => props.skillName, load)
   padding: 12px 14px;
   margin-top: 16px;
   border-left: 2px solid var(--accent);
-  background: rgba(245, 165, 36, 0.04);
+  background: rgb(var(--accent-rgb) / 0.04);
 }
 .se-notice__text {
   flex: 1 1 240px;
@@ -1226,7 +1226,7 @@ watch(() => props.skillName, load)
 .se-field__summary:hover {
   color: var(--text);
   border-color: var(--accent);
-  background: rgba(245, 165, 36, 0.04);
+  background: rgb(var(--accent-rgb) / 0.04);
 }
 .se-field__summary:hover .se-field__toggle { border-color: var(--accent); }
 .se-field__summary:hover .se-field__summary-hint { color: var(--text-soft); }
@@ -1358,7 +1358,7 @@ watch(() => props.skillName, load)
 .se-tree__item::before { display: none; content: none; }
 .se-tree__item:hover {
   color: var(--text);
-  background: rgba(0, 1, 97, 0.05);
+  background: rgb(var(--text-rgb) / 0.05);
   transform: none;
 }
 .se-tree__item--active,
@@ -1673,7 +1673,7 @@ watch(() => props.skillName, load)
   margin-top: 14px;
   padding: 12px 14px;
   border: 1px dashed var(--accent);
-  background: rgba(245, 165, 36, 0.04);
+  background: rgb(var(--accent-rgb) / 0.04);
 }
 .se-suggest__body { flex: 1; min-width: 0; }
 .se-suggest__label {
@@ -1762,7 +1762,7 @@ watch(() => props.skillName, load)
 .se-disclosure__head:hover {
   color: var(--text);
   border-color: var(--accent);
-  background: rgba(245, 165, 36, 0.04);
+  background: rgb(var(--accent-rgb) / 0.04);
 }
 .se-disclosure__head:hover .se-disclosure__toggle {
   border-color: var(--accent);

@@ -226,31 +226,31 @@ const sign = (l: RichLine | null) =>
 }
 
 /* Row tints */
-.dv-row--ins { background: rgba(10, 143, 94, 0.08); }
-.dv-row--del { background: rgba(194, 73, 31, 0.08); }
+.dv-row--ins { background: rgb(var(--success-rgb) / 0.08); }
+.dv-row--del { background: rgb(var(--rust-rgb) / 0.08); }
 .dv-row--ins .dv__sign { color: var(--success); }
 .dv-row--del .dv__sign { color: var(--rust); }
 
 /* Split cells tint per side */
-.dv__code--side.dv-row--ins { background: rgba(10, 143, 94, 0.08); }
-.dv__code--side.dv-row--del { background: rgba(194, 73, 31, 0.08); }
+.dv__code--side.dv-row--ins { background: rgb(var(--success-rgb) / 0.08); }
+.dv__code--side.dv-row--del { background: rgb(var(--rust-rgb) / 0.08); }
 .dv__code--side.dv-row--empty { background: repeating-linear-gradient(
   45deg,
   transparent,
   transparent 6px,
-  rgba(0, 1, 97, 0.025) 6px,
-  rgba(0, 1, 97, 0.025) 12px
+  rgb(var(--text-rgb) / 0.025) 6px,
+  rgb(var(--text-rgb) / 0.025) 12px
 ); }
 
 /* Word-level highlights — stronger than the row tint */
 .dv-row--ins .dv__seg,
 .dv__code--side.dv-row--ins .dv__seg {
-  background: rgba(10, 143, 94, 0.26);
+  background: rgb(var(--success-rgb) / 0.26);
   border-radius: 2px;
 }
 .dv-row--del .dv__seg,
 .dv__code--side.dv-row--del .dv__seg {
-  background: rgba(194, 73, 31, 0.24);
+  background: rgb(var(--rust-rgb) / 0.24);
   border-radius: 2px;
 }
 
@@ -276,7 +276,7 @@ const sign = (l: RichLine | null) =>
 .dv-gap__btn::before { display: none; content: none; }
 .dv-gap__btn:hover {
   color: var(--accent-2);
-  background: rgba(245, 165, 36, 0.07);
+  background: rgb(var(--accent-rgb) / 0.07);
   transform: none;
 }
 </style>

@@ -112,6 +112,11 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<User>('/api/me'),
+  setTheme: (theme: string) =>
+    request<{ theme: string }>('/api/me/theme', {
+      method: 'PUT',
+      body: JSON.stringify({ theme }),
+    }),
   regenerateToken: () =>
     request<{ apiToken: string }>('/api/me/token/regenerate', { method: 'POST' }),
   revokeSessions: () =>

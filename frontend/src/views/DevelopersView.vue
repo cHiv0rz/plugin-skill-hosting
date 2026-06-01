@@ -400,7 +400,7 @@ const restTabComponent = computed(() => {
 }
 .endpoint-auth--public {
   color: var(--success);
-  border-color: rgba(95, 255, 143, 0.4);
+  border-color: rgb(var(--success-rgb) / 0.4);
 }
 
 .endpoint-summary {
@@ -447,7 +447,7 @@ const restTabComponent = computed(() => {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--rust);
-  border: 1px solid rgba(214, 90, 49, 0.45);
+  border: 1px solid rgb(var(--rust-rgb) / 0.45);
   padding: 1px 6px;
   border-radius: 999px;
 }

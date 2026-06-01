@@ -498,7 +498,7 @@ onMounted(load)
 }
 .pl-btn--danger {
   color: var(--rust);
-  border-color: rgba(214, 90, 49, 0.5);
+  border-color: rgb(var(--rust-rgb) / 0.5);
 }
 .pl-btn--danger:hover {
   color: var(--text);
@@ -539,7 +539,7 @@ onMounted(load)
   transition: background 0.12s ease;
 }
 .pl-table tbody tr:hover {
-  background: rgba(245, 165, 36, 0.04);
+  background: rgb(var(--accent-rgb) / 0.04);
 }
 .pl-table__name a {
   color: var(--text);
@@ -766,7 +766,7 @@ onMounted(load)
 .pl-disclosure__head:hover {
   color: var(--text);
   border-color: var(--accent);
-  background: rgba(245, 165, 36, 0.04);
+  background: rgb(var(--accent-rgb) / 0.04);
 }
 .pl-disclosure__head:hover .pl-disclosure__toggle { border-color: var(--accent); }
 .pl-disclosure__head:hover .pl-disclosure__hint { color: var(--text-soft); }

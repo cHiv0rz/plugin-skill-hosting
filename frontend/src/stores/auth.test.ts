@@ -9,6 +9,7 @@ vi.mock('../api', async (importOriginal) => ({
     login: vi.fn(),
     register: vi.fn(),
     me: vi.fn(),
+    setTheme: vi.fn(),
     regenerateToken: vi.fn(),
     revokeSessions: vi.fn(),
     authConfig: vi.fn(),
@@ -201,5 +202,89 @@ describe('auth store', () => {
     const s = useAuthStore()
     await s.refreshUser()
     expect(api.me).not.toHaveBeenCalled()
+  })
+
+  describe('theme', () => {
+    beforeEach(() => {
+      localStorage.clear()
+      delete document.documentElement.dataset.theme
+    })
+
+    it('setTheme applies to <html> + localStorage + ref and persists to server when authed', async () => {
+      vi.mocked(api.setTheme).mockResolvedValue({ theme: 'dark' })
+      localStorage.setItem('token', 't')
+      localStorage.setItem('user', JSON.stringify(fakeUser))
+      const s = useAuthStore()
+      await s.setTheme('dark')
+      expect(s.theme).toBe('dark')
+      expect(document.documentElement.dataset.theme).toBe('dark')
+      expect(localStorage.getItem('theme')).toBe('dark')
+      expect(api.setTheme).toHaveBeenCalledWith('dark')
+      // Mirrored onto the cached user so a reload stays consistent.
+      expect(JSON.parse(localStorage.getItem('user')!).theme).toBe('dark')
+    })
+
+    it('setTheme applies locally but skips the server when logged out', async () => {
+      const s = useAuthStore()
+      await s.setTheme('sepia')
+      expect(s.theme).toBe('sepia')
+      expect(localStorage.getItem('theme')).toBe('sepia')
+      expect(api.setTheme).not.toHaveBeenCalled()
+    })
+
+    it('setTheme rolls back local state if the server rejects', async () => {
+      vi.mocked(api.setTheme).mockRejectedValue(new Error('boom'))
+      // Seed a known starting theme, then build the store so it reads it.
+      localStorage.setItem('theme', 'midnight')
+      localStorage.setItem('token', 't')
+      const s = useAuthStore()
+      expect(s.theme).toBe('midnight')
+      await expect(s.setTheme('contrast')).rejects.toThrow('boom')
+      // Reverted to the pre-switch theme everywhere.
+      expect(s.theme).toBe('midnight')
+      expect(document.documentElement.dataset.theme).toBe('midnight')
+      expect(localStorage.getItem('theme')).toBe('midnight')
+    })
+
+    it('setTheme ignores unknown values (normalizes to default) without a server call', async () => {
+      const s = useAuthStore()
+      await s.setTheme('not-a-theme')
+      // Default theme is "light"; an unknown id collapses to it, and since that
+      // equals the initial value, nothing is persisted to the server.
+      expect(s.theme).toBe('light')
+      expect(api.setTheme).not.toHaveBeenCalled()
+    })
+
+    it('login adopts the server theme from the returned user', async () => {
+      vi.mocked(api.login).mockResolvedValue({
+        token: 'tok',
+        user: { ...fakeUser, theme: 'midnight' },
+      })
+      const s = useAuthStore()
+      await s.login('a@b.c', 'pw')
+      expect(s.theme).toBe('midnight')
+      expect(document.documentElement.dataset.theme).toBe('midnight')
+      expect(localStorage.getItem('theme')).toBe('midnight')
+    })
+
+    it('refreshUser adopts the server theme', async () => {
+      localStorage.setItem('token', 't')
+      vi.mocked(api.me).mockResolvedValue({ ...fakeUser, theme: 'contrast' })
+      const s = useAuthStore()
+      await s.refreshUser()
+      expect(s.theme).toBe('contrast')
+      expect(document.documentElement.dataset.theme).toBe('contrast')
+    })
+
+    it('login leaves the local theme untouched when the user has no valid theme', async () => {
+      localStorage.setItem('theme', 'sepia')
+      vi.mocked(api.login).mockResolvedValue({
+        token: 'tok',
+        user: { ...fakeUser, theme: undefined },
+      })
+      const s = useAuthStore()
+      await s.login('a@b.c', 'pw')
+      expect(s.theme).toBe('sepia')
+    })
   })
 })

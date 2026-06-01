@@ -273,8 +273,8 @@ func (a *App) userByAPIToken(ctx context.Context, token string) (*User, error) {
 	u := &User{}
 	var enc sql.NullString
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token_enc, status, is_admin, created_at, token_version FROM users WHERE api_token_hash = $1`, sha256hex(token)).
-		Scan(&u.ID, &u.Email, &u.Username, &enc, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
+		`SELECT id, email, username, api_token_enc, status, is_admin, theme, created_at, token_version FROM users WHERE api_token_hash = $1`, sha256hex(token)).
+		Scan(&u.ID, &u.Email, &u.Username, &enc, &u.Status, &u.IsAdmin, &u.Theme, &u.CreatedAt, &u.TokenVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -289,8 +289,8 @@ func (a *App) userByID(ctx context.Context, id string) (*User, error) {
 	u := &User{}
 	var enc sql.NullString
 	err := a.DB.QueryRowContext(ctx,
-		`SELECT id, email, username, api_token_enc, status, is_admin, created_at, token_version FROM users WHERE id = $1`, id).
-		Scan(&u.ID, &u.Email, &u.Username, &enc, &u.Status, &u.IsAdmin, &u.CreatedAt, &u.TokenVersion)
+		`SELECT id, email, username, api_token_enc, status, is_admin, theme, created_at, token_version FROM users WHERE id = $1`, id).
+		Scan(&u.ID, &u.Email, &u.Username, &enc, &u.Status, &u.IsAdmin, &u.Theme, &u.CreatedAt, &u.TokenVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -379,6 +379,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 			APIToken: apiTok,
 			Status:   UserStatusApproved,
 			IsAdmin:  isAdmin,
+			Theme:    DefaultTheme,
 		},
 	})
 }
@@ -397,14 +398,14 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 
 	var (
-		id, username, hash, status string
-		isAdmin                    bool
-		tokenVersion               int
-		apiEnc                     sql.NullString
+		id, username, hash, status, theme string
+		isAdmin                           bool
+		tokenVersion                      int
+		apiEnc                            sql.NullString
 	)
 	err := a.DB.QueryRowContext(r.Context(),
-		`SELECT id, username, password_hash, api_token_enc, status, is_admin, token_version FROM users WHERE email = $1`, req.Email).
-		Scan(&id, &username, &hash, &apiEnc, &status, &isAdmin, &tokenVersion)
+		`SELECT id, username, password_hash, api_token_enc, status, is_admin, theme, token_version FROM users WHERE email = $1`, req.Email).
+		Scan(&id, &username, &hash, &apiEnc, &status, &isAdmin, &theme, &tokenVersion)
 	if err == sql.ErrNoRows {
 		metrics.LoginsTotal.WithLabelValues("password", "failure").Inc()
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
@@ -453,12 +454,40 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			APIToken: apiTok,
 			Status:   status,
 			IsAdmin:  isAdmin,
+			Theme:    theme,
 		},
 	})
 }
 
 func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, currentUser(r))
+}
+
+type setThemeReq struct {
+	Theme string `json:"theme"`
+}
+
+// handleSetTheme persists the caller's UI theme preference. It lives outside
+// the approval gate (alongside /me) so a pending user can still pick a theme
+// while they wait. The allowed set is validated server-side; unknown values are
+// rejected rather than stored, so a stale client can't poison the column.
+func (a *App) handleSetTheme(w http.ResponseWriter, r *http.Request) {
+	var req setThemeReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if !isValidTheme(req.Theme) {
+		writeErr(w, http.StatusBadRequest, "unknown theme")
+		return
+	}
+	user := currentUser(r)
+	if _, err := a.DB.ExecContext(r.Context(),
+		`UPDATE users SET theme = $1 WHERE id = $2`, req.Theme, user.ID); err != nil {
+		serverErr(w, r, err, "db error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"theme": req.Theme})
 }
 
 func (a *App) handleRegenerateAPIToken(w http.ResponseWriter, r *http.Request) {

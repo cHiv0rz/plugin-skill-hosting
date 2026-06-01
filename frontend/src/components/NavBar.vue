@@ -3,6 +3,7 @@ import { computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter, RouterLink } from 'vue-router'
 import Breadcrumbs from './Breadcrumbs.vue'
+import ThemeSwitcher from './ThemeSwitcher.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -26,6 +27,7 @@ function logout() {
   <nav class="top">
     <Breadcrumbs />
     <div class="links">
+      <ThemeSwitcher />
       <template v-if="auth.user">
         <template v-if="isApproved">
           <RouterLink to="/plugins/new" class="btn">+ New plugin</RouterLink>

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api, isJwtExpired } from '../api'
+import { applyTheme, getStoredTheme, isValidTheme, normalizeTheme, setStoredTheme } from '../theme'
 import type { AuthMode, User } from '../types'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -12,6 +13,9 @@ export const useAuthStore = defineStore('auth', () => {
   const marketplaceName = ref<string>('')
   const defaultLicense = ref<string>('MIT')
   const userApprovalRequired = ref<boolean>(false)
+  // The active UI theme. Seeded from localStorage (already applied to <html> in
+  // main.ts) and reconciled with the server preference once a user loads.
+  const theme = ref<string>(getStoredTheme())
   let modePromise: Promise<AuthMode> | null = null
 
   // loadToken reads the stored JWT but discards it (along with the cached user)
@@ -46,6 +50,51 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('user', JSON.stringify(u))
     token.value = t
     user.value = u
+    syncThemeFromUser(u)
+  }
+
+  // syncThemeFromUser adopts the server-side theme preference whenever a user
+  // payload carries a valid one — the server is the source of truth across
+  // devices. It updates the ref, the <html> attribute, and the localStorage
+  // cache (so the next pre-boot read matches). A missing/unknown value is left
+  // alone, preserving whatever the user already had locally.
+  function syncThemeFromUser(u: User | null) {
+    if (u && isValidTheme(u.theme)) {
+      theme.value = u.theme
+      applyTheme(u.theme)
+      setStoredTheme(u.theme)
+    }
+  }
+
+  // setTheme switches the active theme optimistically: it applies and persists
+  // locally first (so the change is instant and survives reload), then — when
+  // signed in — saves it to the server. A server rejection/failure rolls the
+  // local state back so the UI never diverges from what's stored.
+  async function setTheme(id: string) {
+    const next = normalizeTheme(id)
+    const prev = theme.value
+    if (next === prev) return
+    applyThemeLocally(next)
+    if (!token.value) return
+    try {
+      await api.setTheme(next)
+    } catch (e) {
+      applyThemeLocally(prev)
+      throw e
+    }
+  }
+
+  // applyThemeLocally updates the ref + <html> + localStorage, and mirrors the
+  // value onto the cached user object so a reload (which restores `user` from
+  // storage before /api/me returns) stays consistent.
+  function applyThemeLocally(next: string) {
+    theme.value = next
+    applyTheme(next)
+    setStoredTheme(next)
+    if (user.value) {
+      user.value = { ...user.value, theme: next }
+      localStorage.setItem('user', JSON.stringify(user.value))
+    }
   }
 
   async function ensureMode(): Promise<AuthMode> {
@@ -99,6 +148,7 @@ export const useAuthStore = defineStore('auth', () => {
     const u = await api.me()
     localStorage.setItem('user', JSON.stringify(u))
     user.value = u
+    syncThemeFromUser(u)
   }
 
   async function regenerateToken() {
@@ -121,8 +171,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    user, token, mode, marketplaceName, defaultLicense, userApprovalRequired,
+    user, token, mode, marketplaceName, defaultLicense, userApprovalRequired, theme,
     ensureMode, login, register, loginViaOIDC, logout, doLogout, setSession,
-    refreshUser, regenerateToken, signOutEverywhere,
+    refreshUser, regenerateToken, signOutEverywhere, setTheme,
   }
 })

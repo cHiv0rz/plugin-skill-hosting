@@ -170,7 +170,7 @@ import ParamRow from '../ParamRow.vue'
 <style scoped>
 .callout {
   border-left: 3px solid var(--accent);
-  background: rgba(245, 165, 36, 0.06);
+  background: rgb(var(--accent-rgb) / 0.06);
   padding: 12px 16px;
   margin: 8px 0 20px;
 }

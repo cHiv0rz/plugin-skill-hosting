@@ -178,7 +178,7 @@ onMounted(load)
 }
 .warn {
   margin-bottom: 16px;
-  border-color: rgba(245, 165, 36, 0.5);
+  border-color: rgb(var(--accent-rgb) / 0.5);
 }
 .toolbar {
   display: flex;
@@ -218,8 +218,8 @@ onMounted(load)
   border-radius: 999px;
 }
 .chip--flag {
-  color: #e5484d;
-  border-color: rgba(229, 72, 77, 0.5);
+  color: var(--sev-critical);
+  border-color: rgb(var(--sev-critical-rgb) / 0.5);
 }
 .result {
   margin-bottom: 10px;
@@ -264,10 +264,10 @@ onMounted(load)
   font-size: 13px;
   color: #fff;
 }
-.badge--low { background: #30a46c; }
-.badge--medium { background: #f5a524; color: #1a1a1a; }
-.badge--high { background: #f76808; }
-.badge--critical { background: #e5484d; }
+.badge--low { background: var(--sev-low); }
+.badge--medium { background: var(--sev-medium); color: #1a1a1a; }
+.badge--high { background: var(--sev-high); }
+.badge--critical { background: var(--sev-critical); }
 .cats {
   display: flex;
   flex-wrap: wrap;
@@ -306,9 +306,9 @@ onMounted(load)
   margin-right: 6px;
   vertical-align: middle;
 }
-.sev--critical { background: rgba(229, 72, 77, 0.15); color: #e5484d; }
-.sev--high { background: rgba(247, 104, 8, 0.15); color: #f76808; }
-.sev--medium { background: rgba(245, 165, 36, 0.15); color: #f5a524; }
+.sev--critical { background: rgb(var(--sev-critical-rgb) / 0.15); color: var(--sev-critical); }
+.sev--high { background: rgb(var(--sev-high-rgb) / 0.15); color: var(--sev-high); }
+.sev--medium { background: rgb(var(--sev-medium-rgb) / 0.15); color: var(--sev-medium); }
 .sev--low { background: var(--border); color: var(--muted); }
 .errlist {
   margin: 12px 0 0;

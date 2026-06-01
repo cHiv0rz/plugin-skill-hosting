@@ -51,6 +51,9 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('user', JSON.stringify(u))
     token.value = t
     user.value = u
+    // New session: invalidate any cached refresh from a prior login so the next
+    // ensureFreshUser() actually re-fetches for this user.
+    freshUserPromise = null
     syncThemeFromUser(u)
   }
 
@@ -133,8 +136,12 @@ export const useAuthStore = defineStore('auth', () => {
           // clear it so the guard sees a logged-out state and routes to login.
           logout()
         } else {
-          // Offline / 5xx: don't poison the cache — allow a later retry.
+          // Offline / 5xx: don't poison the cache — allow a later retry — and
+          // re-throw so the route guard can fail closed (it can't confirm the
+          // user's current status/isAdmin, so it must not admit them on stale
+          // claims) rather than silently proceed.
           freshUserPromise = null
+          throw e
         }
       })
     }
@@ -157,6 +164,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    freshUserPromise = null
   }
 
   // doLogout clears local state, then either kicks off RP-initiated logout

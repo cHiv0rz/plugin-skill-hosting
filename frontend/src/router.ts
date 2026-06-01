@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from './stores/auth'
-import { isJwtExpired } from './api'
+import { errStatus, isJwtExpired } from './api'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -118,7 +118,18 @@ router.beforeEach(async (to) => {
     // so a demoted, rejected, or revoked user can't reach a protected route on
     // stale localStorage claims. A 401 here clears the session (see store), so
     // re-check the token afterwards and bounce to login if it's gone.
-    await auth.ensureFreshUser()
+    try {
+      await auth.ensureFreshUser()
+    } catch (e: unknown) {
+      // A non-401 failure (offline / 5xx) means we couldn't confirm the user's
+      // current status/isAdmin. Fail closed: if the token was cleared, go to
+      // login; otherwise show an error page rather than admitting them on
+      // stale cached claims.
+      if (!auth.token) {
+        return { path: '/login', query: { redirect: to.fullPath } }
+      }
+      return { path: '/error', query: { code: String(errStatus(e) ?? 503) } }
+    }
     if (!auth.token) {
       return { path: '/login', query: { redirect: to.fullPath } }
     }

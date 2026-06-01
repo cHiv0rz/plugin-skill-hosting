@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, computed, watch, nextTick } from 'vue'
-import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
 import { api, errMsg, slugError } from '../api'
 import type { ValidationReport, FindingSeverity, Finding } from '../types'
 import { useConfirm } from '../composables/useConfirm'
@@ -407,7 +407,12 @@ async function revert(version: number) {
   }
 }
 
-onBeforeRouteLeave(async () => {
+// Shared unsaved-changes gate. onBeforeRouteLeave fires when navigating away
+// from the component; onBeforeRouteUpdate fires when only the route params
+// change (e.g. editing skill A then jumping to skill B), which reuses this
+// instance — without the update guard that switch would silently discard the
+// in-progress edit before the watch() reloads.
+async function confirmDiscardIfDirty(): Promise<boolean> {
   if (bypassGuard) {
     bypassGuard = false
     return true
@@ -420,7 +425,10 @@ onBeforeRouteLeave(async () => {
     cancelLabel: 'Stay',
     danger: true,
   })
-})
+}
+
+onBeforeRouteLeave(confirmDiscardIfDirty)
+onBeforeRouteUpdate(confirmDiscardIfDirty)
 
 function onBeforeUnload(e: BeforeUnloadEvent) {
   if (!isDirty.value) return

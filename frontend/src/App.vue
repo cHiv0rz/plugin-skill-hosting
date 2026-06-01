@@ -16,7 +16,10 @@ onMounted(() => {
   // view reflect the current server-side user instead of stale localStorage.
   // Protected routes are already refreshed by the route guard (which awaits the
   // same shared promise) before they render, and a 401 clears the session.
-  auth.ensureFreshUser()
+  // Swallow rejections here: on a guarded route the router's guard awaits the
+  // same promise and turns a failure into an error/login redirect; on a public
+  // route there's nothing to do but keep showing cached display state.
+  auth.ensureFreshUser().catch(() => {})
 })
 </script>
 

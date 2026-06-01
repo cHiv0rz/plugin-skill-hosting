@@ -206,18 +206,32 @@ describe('auth store', () => {
     expect(localStorage.getItem('token')).toBeNull()
   })
 
-  it('ensureFreshUser does not cache a transient (non-401) failure', async () => {
+  it('ensureFreshUser rethrows a transient (non-401) failure but keeps the session and allows retry', async () => {
     vi.mocked(api.me)
       .mockRejectedValueOnce(new ApiError(503, 'unavailable'))
       .mockResolvedValueOnce({ ...fakeUser, isAdmin: true })
     localStorage.setItem('token', 't')
     localStorage.setItem('user', JSON.stringify(fakeUser))
     const s = useAuthStore()
-    await s.ensureFreshUser() // swallows the 5xx, keeps the session
+    // Re-throws so the route guard can fail closed, but doesn't clear the
+    // session (a 5xx isn't an auth failure) and doesn't poison the cache.
+    await expect(s.ensureFreshUser()).rejects.toThrow('unavailable')
     expect(s.token).toBe('t')
-    await s.ensureFreshUser() // retry succeeds
+    await s.ensureFreshUser() // retry succeeds against a fresh request
     expect(api.me).toHaveBeenCalledTimes(2)
     expect(s.user?.isAdmin).toBe(true)
+  })
+
+  it('setSession invalidates a prior session refresh so the next ensureFreshUser refetches', async () => {
+    vi.mocked(api.me).mockResolvedValue({ ...fakeUser, isAdmin: true })
+    localStorage.setItem('token', 't')
+    const s = useAuthStore()
+    await s.ensureFreshUser()
+    expect(api.me).toHaveBeenCalledTimes(1)
+    // A new login replaces the session; the cached refresh must not be reused.
+    s.setSession('t2', { ...fakeUser, id: 'u2' })
+    await s.ensureFreshUser()
+    expect(api.me).toHaveBeenCalledTimes(2)
   })
 
   it('ensureFreshUser is a no-op without a token', async () => {

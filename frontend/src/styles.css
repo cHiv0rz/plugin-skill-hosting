@@ -125,8 +125,12 @@ nav.top .links a.btn,
 nav.top .links a.btn:hover {
   border-bottom: 0;
   /* Restore the global .btn padding that nav.top .links a otherwise overrides. */
-  padding: 11px 18px;
+  padding: 10px 17px;
 }
+/* Restore the global .btn colors that nav.top .links a (color: var(--text-soft))
+   would otherwise win on specificity, leaving blue text on the blue button. */
+nav.top .links a.btn { color: var(--bg); }
+nav.top .links a.btn:hover { color: var(--text); }
 nav.top .user {
   font-family: var(--mono);
   font-size: 10.5px;
@@ -219,18 +223,17 @@ h3 {
   margin: 22px 0 10px;
 }
 
-/* Buttons — hard edged, primary fills with amber on hover ──── */
+/* Buttons — hard edged, calm color change on hover ─────────── */
 button, .btn {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   background: var(--text);
   color: var(--bg);
-  border: 0;
+  border: 1px solid var(--text);
   border-radius: 0;
-  padding: 11px 18px;
+  padding: 10px 17px;
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 600;
@@ -240,33 +243,23 @@ button, .btn {
   letter-spacing: 0.22em;
   text-transform: uppercase;
   cursor: pointer;
-  overflow: hidden;
   text-decoration: none;
-  transition: color 0.3s ease, transform 0.2s ease;
-  isolation: isolate;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
-button::before, .btn::before {
-  content: '';
-  position: absolute;
-  inset: 0;
+button:hover, .btn:hover {
   background: var(--accent);
-  transform: translateX(-101%);
-  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-  z-index: -1;
+  color: var(--text);
+  border-color: var(--accent);
 }
-button:hover, .btn:hover { color: var(--text); transform: translateY(-1px); }
-button:hover::before, .btn:hover::before { transform: translateX(0); }
-button:active, .btn:active { transform: translateY(0); }
 
 button.secondary, .btn.secondary {
   background: transparent;
   color: var(--text-soft);
   border: 1px solid var(--border);
-  padding: 10px 17px;
 }
-button.secondary::before, .btn.secondary::before { background: var(--text); }
 button.secondary:hover, .btn.secondary:hover {
-  color: var(--bg);
+  background: transparent;
+  color: var(--text);
   border-color: var(--text);
 }
 
@@ -274,11 +267,10 @@ button.danger, .btn.danger {
   background: transparent;
   color: var(--rust);
   border: 1px solid rgba(214, 90, 49, 0.45);
-  padding: 10px 17px;
 }
-button.danger::before, .btn.danger::before { background: var(--rust); }
 button.danger:hover, .btn.danger:hover {
-  color: var(--bg);
+  background: transparent;
+  color: var(--rust);
   border-color: var(--rust);
 }
 
@@ -286,9 +278,7 @@ button:disabled, .btn:disabled,
 button:disabled:hover, .btn:disabled:hover {
   opacity: 0.4;
   cursor: not-allowed;
-  transform: none;
 }
-button:disabled::before, .btn:disabled::before { display: none; }
 
 /* Inputs — Swiss / editorial: bottom border only ───────────── */
 input,

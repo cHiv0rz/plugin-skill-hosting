@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { api, errMsg, errStatus } from '../api'
@@ -146,6 +146,10 @@ onMounted(() => {
   load()
   auth.ensureMode()
 })
+// Vue Router reuses this component when only :name changes (e.g. navigating
+// from /plugins/a to /plugins/b), so onMounted won't fire again — reload
+// explicitly when the route param changes to avoid showing the prior plugin.
+watch(() => route.params.name, load)
 </script>
 
 <template>

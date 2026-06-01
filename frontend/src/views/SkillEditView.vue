@@ -440,9 +440,10 @@ onBeforeUnmount(() => {
   fixResetTimers.clear()
 })
 // Same component backs /skills/new and /skills/:name/edit, so a route change
-// (e.g. just after import) reuses the instance and skips onMounted — reload
-// explicitly when the target skill name changes.
-watch(() => props.skillName, load)
+// (e.g. just after import, or switching to a skill in another plugin) reuses
+// the instance and skips onMounted — reload explicitly when either the target
+// plugin or skill changes, not just the skill name.
+watch(() => [props.pluginName, props.skillName], load)
 </script>
 
 <template>

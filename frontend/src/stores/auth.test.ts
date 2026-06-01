@@ -25,7 +25,7 @@ function makeJwt(expSeconds: number): string {
   return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: 'u1', exp: expSeconds })}.sig`
 }
 
-import { api } from '../api'
+import { api, ApiError } from '../api'
 import { useAuthStore } from './auth'
 
 const fakeUser = {
@@ -166,6 +166,64 @@ describe('auth store', () => {
     expect(m2).toBe('password')
     expect(api.authConfig).toHaveBeenCalledTimes(1)
     expect(s.marketplaceName).toBe('mp')
+  })
+
+  it('ensureMode does not cache a failed config request (allows retry)', async () => {
+    vi.mocked(api.authConfig)
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValueOnce({
+        mode: 'password',
+        marketplaceName: 'mp',
+        defaultLicense: 'MIT',
+        userApprovalRequired: false,
+      })
+    const s = useAuthStore()
+    await expect(s.ensureMode()).rejects.toThrow('network blip')
+    // The rejected promise must not be cached: a second call retries and wins.
+    const mode = await s.ensureMode()
+    expect(mode).toBe('password')
+    expect(api.authConfig).toHaveBeenCalledTimes(2)
+  })
+
+  it('ensureFreshUser refreshes /api/me once and shares the in-flight promise', async () => {
+    vi.mocked(api.me).mockResolvedValue({ ...fakeUser, isAdmin: true })
+    localStorage.setItem('token', 't')
+    localStorage.setItem('user', JSON.stringify(fakeUser))
+    const s = useAuthStore()
+    await Promise.all([s.ensureFreshUser(), s.ensureFreshUser()])
+    expect(api.me).toHaveBeenCalledTimes(1)
+    expect(s.user?.isAdmin).toBe(true) // fresh server claims overwrote the cache
+  })
+
+  it('ensureFreshUser clears the session when /api/me returns 401', async () => {
+    vi.mocked(api.me).mockRejectedValue(new ApiError(401, 'unauthorized'))
+    localStorage.setItem('token', 't')
+    localStorage.setItem('user', JSON.stringify(fakeUser))
+    const s = useAuthStore()
+    await s.ensureFreshUser()
+    expect(s.token).toBeNull()
+    expect(s.user).toBeNull()
+    expect(localStorage.getItem('token')).toBeNull()
+  })
+
+  it('ensureFreshUser does not cache a transient (non-401) failure', async () => {
+    vi.mocked(api.me)
+      .mockRejectedValueOnce(new ApiError(503, 'unavailable'))
+      .mockResolvedValueOnce({ ...fakeUser, isAdmin: true })
+    localStorage.setItem('token', 't')
+    localStorage.setItem('user', JSON.stringify(fakeUser))
+    const s = useAuthStore()
+    await s.ensureFreshUser() // swallows the 5xx, keeps the session
+    expect(s.token).toBe('t')
+    await s.ensureFreshUser() // retry succeeds
+    expect(api.me).toHaveBeenCalledTimes(2)
+    expect(s.user?.isAdmin).toBe(true)
+  })
+
+  it('ensureFreshUser is a no-op without a token', async () => {
+    const s = useAuthStore()
+    await s.ensureFreshUser()
+    expect(api.me).not.toHaveBeenCalled()
   })
 
   it('regenerateToken updates user.apiToken and storage', async () => {

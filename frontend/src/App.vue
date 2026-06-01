@@ -5,29 +5,18 @@ import SiteFooter from './components/Footer.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import PromptDialog from './components/PromptDialog.vue'
 import { useAuthStore } from './stores/auth'
-import { useRoute, useRouter } from 'vue-router'
-import { errStatus } from './api'
+import { useRoute } from 'vue-router'
 
 const auth = useAuthStore()
 const route = useRoute()
-const router = useRouter()
 const hideChrome = computed(() => Boolean(route.meta?.hideChrome))
 
 onMounted(() => {
-  if (auth.token && !auth.user?.apiToken) {
-    auth.refreshUser().catch((e: unknown) => {
-      // A 401 here means the stored token is expired, revoked (e.g. the user
-      // hit "sign out everywhere" on another device), or otherwise invalid —
-      // clear it and, if this page needs auth, route to login. Other failures
-      // (offline, 5xx) are left for the route guards / views to surface.
-      if (errStatus(e) === 401) {
-        auth.logout()
-        if (route.meta?.requiresAuth) {
-          router.replace({ path: '/login', query: { redirect: route.fullPath } })
-        }
-      }
-    })
-  }
+  // Refresh /api/me once at startup so the navbar and any public (non-guarded)
+  // view reflect the current server-side user instead of stale localStorage.
+  // Protected routes are already refreshed by the route guard (which awaits the
+  // same shared promise) before they render, and a 401 clears the session.
+  auth.ensureFreshUser()
 })
 </script>
 

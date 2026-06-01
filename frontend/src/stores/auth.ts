@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, isJwtExpired } from '../api'
+import { api, isJwtExpired, errStatus } from '../api'
 import { applyTheme, getStoredTheme, isValidTheme, normalizeTheme, setStoredTheme } from '../theme'
 import type { AuthMode, User } from '../types'
 
@@ -17,6 +17,7 @@ export const useAuthStore = defineStore('auth', () => {
   // main.ts) and reconciled with the server preference once a user loads.
   const theme = ref<string>(getStoredTheme())
   let modePromise: Promise<AuthMode> | null = null
+  let freshUserPromise: Promise<void> | null = null
 
   // loadToken reads the stored JWT but discards it (along with the cached user)
   // if it has already expired, so a tab reopened weeks later starts clean and
@@ -106,9 +107,38 @@ export const useAuthStore = defineStore('auth', () => {
         defaultLicense.value = c.defaultLicense
         userApprovalRequired.value = c.userApprovalRequired
         return c.mode
+      }).catch((e) => {
+        // Don't cache a transient failure: clear the promise so a later caller
+        // (e.g. the user retrying login after a network blip) starts a fresh
+        // request instead of re-rejecting against the dead one forever.
+        modePromise = null
+        throw e
       })
     }
     return modePromise
+  }
+
+  // ensureFreshUser refreshes /api/me at most once per app load, caching the
+  // in-flight promise so concurrent callers (the App-startup kick-off and the
+  // route guard) share a single request. Route guards await this before
+  // trusting cached status/isAdmin, so a demoted, rejected, or otherwise
+  // changed user can't keep navigating on stale localStorage claims after a
+  // reload — localStorage is treated as a display cache, /api/me as truth.
+  function ensureFreshUser(): Promise<void> {
+    if (!token.value) return Promise.resolve()
+    if (!freshUserPromise) {
+      freshUserPromise = refreshUser().catch((e: unknown) => {
+        if (errStatus(e) === 401) {
+          // Token expired or revoked (e.g. "sign out everywhere" elsewhere):
+          // clear it so the guard sees a logged-out state and routes to login.
+          logout()
+        } else {
+          // Offline / 5xx: don't poison the cache — allow a later retry.
+          freshUserPromise = null
+        }
+      })
+    }
+    return freshUserPromise
   }
 
   async function login(email: string, password: string) {
@@ -172,7 +202,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     user, token, mode, marketplaceName, defaultLicense, userApprovalRequired, theme,
-    ensureMode, login, register, loginViaOIDC, logout, doLogout, setSession,
+    ensureMode, ensureFreshUser, login, register, loginViaOIDC, logout, doLogout, setSession,
     refreshUser, regenerateToken, signOutEverywhere, setTheme,
   }
 })

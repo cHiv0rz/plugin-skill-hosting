@@ -114,6 +114,14 @@ router.beforeEach(async (to) => {
       auth.logout()
       return { path: '/login', query: { redirect: to.fullPath } }
     }
+    // Refresh /api/me once per app load before trusting cached status/isAdmin,
+    // so a demoted, rejected, or revoked user can't reach a protected route on
+    // stale localStorage claims. A 401 here clears the session (see store), so
+    // re-check the token afterwards and bounce to login if it's gone.
+    await auth.ensureFreshUser()
+    if (!auth.token) {
+      return { path: '/login', query: { redirect: to.fullPath } }
+    }
     // Pending / rejected users are confined to /pending until an existing
     // user approves them (or until they log out from there).
     const status = auth.user?.status

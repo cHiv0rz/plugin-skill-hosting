@@ -6,6 +6,9 @@ backend/data/
 backend/.idea/
 node_modules/
 frontend/dist/
+frontend/coverage/
+backend/coverage.out
+backend/coverage.txt
 .DS_Store
 *.log
 .antigravitycli/

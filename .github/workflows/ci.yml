@@ -85,9 +85,30 @@ jobs:
         run: go build ./...
 
       - name: go test
-        run: go test -race ./...
+        run: go test -race -coverprofile=coverage.out ./...
         env:
           TEST_DATABASE_URL: postgres://marketplace:marketplace@localhost:5432/marketplace?sslmode=disable
+
+      # Render the profile to a text report. The combined summary is written by
+      # the `coverage` job from the uploaded artifact (a step summary is
+      # per-job, so cross-job aggregation has to go through an artifact).
+      - name: Generate coverage report
+        if: always()
+        run: |
+          [ -f coverage.out ] || { echo "no coverage profile (tests did not complete)"; exit 0; }
+          go tool cover -func=coverage.out -o coverage.txt
+          echo "Backend coverage: $(grep '^total:' coverage.txt | awk '{print $3}')"
+
+      - name: Upload coverage profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: |
+            backend/coverage.out
+            backend/coverage.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
   frontend:
     name: Frontend
@@ -116,7 +137,18 @@ jobs:
         run: npm run typecheck
 
       - name: Test
-        run: npm test
+        run: npm run test:coverage
+
+      # test:coverage emits coverage/coverage-summary.json; the combined summary
+      # is written by the `coverage` job from this uploaded artifact.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build
         run: npm run build
@@ -156,3 +188,54 @@ jobs:
           name: playwright-report
           path: e2e/playwright-report/
           retention-days: 7
+
+  # Combine the backend + frontend coverage artifacts into a single step
+  # summary. Runs after both (whichever actually ran) so the run's summary page
+  # shows one unified "Coverage" section instead of one per job. !cancelled()
+  # lets it run even when a job was skipped (only one side changed) or failed.
+  coverage:
+    name: Coverage report
+    needs: [changes, backend, frontend]
+    if: ${{ !cancelled() && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: artifacts
+
+      - name: Write combined summary
+        run: |
+          be=artifacts/backend-coverage/coverage.txt
+          fe=artifacts/frontend-coverage/coverage-summary.json
+          {
+            echo "## Coverage"
+            echo ""
+
+            if [ -f "$be" ]; then
+              total=$(grep '^total:' "$be" | awk '{print $3}')
+              echo "### Backend — ${total}"
+              echo ""
+              echo "<details><summary>Per-function coverage</summary>"
+              echo ""
+              echo '```'
+              cat "$be"
+              echo '```'
+              echo "</details>"
+            else
+              echo "### Backend — _not run_"
+            fi
+            echo ""
+
+            if [ -f "$fe" ]; then
+              echo "### Frontend"
+              echo ""
+              echo "| Metric | Coverage |"
+              echo "| --- | --- |"
+              jq -r '.total as $t | ("lines","statements","functions","branches")
+                     | "| \(.) | \($t[.].pct)% (\($t[.].covered)/\($t[.].total)) |"' "$fe"
+            else
+              echo "### Frontend — _not run_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

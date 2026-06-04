@@ -31,3 +31,14 @@ export async function logout(page: Page) {
   await page.getByRole('button', { name: 'Log out' }).click()
   await expect(page).toHaveURL('/login')
 }
+
+// Create a plugin through the real /plugins/new form and land on its detail
+// page. Assumes the caller is already authenticated.
+export async function createPlugin(page: Page, name: string, description: string) {
+  await page.goto('/plugins/new')
+  const inputs = page.locator('form input')
+  await inputs.nth(0).fill(name) // name (slug)
+  await inputs.nth(1).fill(description) // description
+  await page.getByRole('button', { name: 'Create plugin' }).click()
+  await expect(page).toHaveURL(`/plugins/${name}`)
+}

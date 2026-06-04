@@ -207,29 +207,47 @@ jobs:
 
       - name: Write combined summary
         run: |
-          be=artifacts/backend-coverage/coverage.txt
+          bep=artifacts/backend-coverage/coverage.out
+          bef=artifacts/backend-coverage/coverage.txt
           fe=artifacts/frontend-coverage/coverage-summary.json
           {
             echo "## Coverage"
             echo ""
 
-            if [ -f "$be" ]; then
-              total=$(grep '^total:' "$be" | awk '{print $3}')
-              echo "### Backend — ${total}"
+            if [ -f "$bep" ]; then
+              echo "### Backend (Go — statements)"
               echo ""
-              echo "<details><summary>Per-function coverage</summary>"
-              echo ""
-              echo '```'
-              cat "$be"
-              echo '```'
-              echo "</details>"
+              echo "| Package | Coverage |"
+              echo "| --- | --- |"
+              # Aggregate the coverage profile into per-package statement
+              # coverage: covered statements / total statements, grouped by the
+              # package dir (module root stripped for readability).
+              awk '
+                NR>1 {
+                  split($1,a,":"); file=a[1]
+                  n=split(file,p,"/"); pkg=p[2]
+                  for(i=3;i<n;i++) pkg=pkg"/"p[i]
+                  tot[pkg]+=$2; if($3>0) cov[pkg]+=$2
+                }
+                END { for(k in tot) printf "%s\t%.1f%% (%d/%d)\n", k, cov[k]/tot[k]*100, cov[k], tot[k] }
+              ' "$bep" | sort | awk -F'\t' '{printf "| %s | %s |\n", $1, $2}'
+              awk 'NR>1{t+=$2; if($3>0)c+=$2} END{printf "| **total** | **%.1f%% (%d/%d)** |\n", c/t*100, c, t}' "$bep"
+              if [ -f "$bef" ]; then
+                echo ""
+                echo "<details><summary>Per-function coverage</summary>"
+                echo ""
+                echo '```'
+                cat "$bef"
+                echo '```'
+                echo "</details>"
+              fi
             else
               echo "### Backend — _not run_"
             fi
             echo ""
 
             if [ -f "$fe" ]; then
-              echo "### Frontend"
+              echo "### Frontend (Vitest)"
               echo ""
               echo "| Metric | Coverage |"
               echo "| --- | --- |"

@@ -45,6 +45,11 @@ export const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/external-git',
+      component: () => import('./views/ExternalGitView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/pending',
       component: () => import('./views/PendingView.vue'),
       meta: { requiresAuth: true },
@@ -150,6 +155,10 @@ router.beforeEach(async (to) => {
     }
     // /audit is admin-only in every auth mode (it can expose skill internals).
     if (to.path === '/audit' && !auth.user?.isAdmin) {
+      return { path: '/error', query: { code: '403' } }
+    }
+    // /external-git is admin-only — it inspects and mutates the mirror remote.
+    if (to.path === '/external-git' && !auth.user?.isAdmin) {
       return { path: '/error', query: { code: '403' } }
     }
   }

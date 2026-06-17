@@ -12,6 +12,8 @@ import type {
   Finding,
   FindingFix,
   AuditResultsResponse,
+  ExternalSyncStatus,
+  ReconcileReport,
 } from './types'
 
 function token(): string | null {
@@ -134,6 +136,9 @@ export const api = {
     request<void>(`/api/users/${id}/demote`, { method: 'POST' }),
   listAuditResults: () => request<AuditResultsResponse>('/api/audit/results'),
   runAudit: () => request<{ status: string }>('/api/audit/run', { method: 'POST' }),
+  externalGitStatus: () => request<ExternalSyncStatus>('/api/external-git/status'),
+  externalGitReconcile: () =>
+    request<ReconcileReport>('/api/external-git/reconcile', { method: 'POST' }),
   listPlugins: () => request<Plugin[]>('/api/plugins'),
   getPlugin: (name: string) => request<Plugin>(`/api/plugins/${name}`),
   createPlugin: (data: Partial<Plugin>) =>
@@ -182,6 +187,11 @@ export const api = {
   deleteSkill: (pluginName: string, skillName: string) =>
     request<void>(`/api/plugins/${pluginName}/skills/${skillName}`, {
       method: 'DELETE',
+    }),
+  moveSkill: (pluginName: string, skillName: string, targetPlugin: string) =>
+    request<Skill>(`/api/plugins/${pluginName}/skills/${skillName}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ targetPlugin }),
     }),
   listDeletedSkills: (pluginName: string) =>
     request<Skill[]>(`/api/plugins/${pluginName}/deleted-skills`),

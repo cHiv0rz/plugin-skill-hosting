@@ -344,6 +344,88 @@ nav.top .links .user-link .user-link-at {
   color: var(--accent);
   margin-right: 1px;
 }
+/* Admin dropdown: the username is a <button> trigger that drops a panel of
+   admin destinations (audit / mirror / users). The trigger reuses .user-link
+   for its look; these rules strip the default <button> chrome and add the
+   chevron + panel. */
+nav.top .links .user-menu {
+  position: relative;
+  display: inline-flex;
+  margin-left: 4px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+}
+nav.top .links button.user-menu__trigger {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  margin-left: 0;
+  padding: 4px 0;
+  gap: 4px;
+  text-transform: none;
+  font-weight: 400;
+}
+nav.top .links button.user-menu__trigger:hover,
+nav.top .links button.user-menu__trigger--open {
+  color: var(--text);
+  background: none;
+  border-bottom-color: var(--accent);
+}
+nav.top .links .user-menu__chev {
+  color: var(--muted);
+  font-size: 9px;
+  transition: transform 0.18s ease;
+}
+nav.top .links .user-menu__trigger--open .user-menu__chev {
+  transform: rotate(180deg);
+}
+nav.top .links .user-menu__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.22);
+}
+nav.top .links a.user-menu__item {
+  display: block;
+  padding: 10px 14px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--text-soft);
+  text-decoration: none;
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+nav.top .links a.user-menu__item:last-child {
+  border-bottom: 0;
+}
+nav.top .links a.user-menu__item:hover {
+  color: var(--text);
+  background: rgb(var(--accent-rgb) / 0.07);
+}
+nav.top .links a.user-menu__item.router-link-active {
+  color: var(--text);
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+}
+.navmenu-enter-active,
+.navmenu-leave-active {
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.navmenu-enter-from,
+.navmenu-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
 nav.top .pending-chip {
   display: inline-flex;
   align-items: center;

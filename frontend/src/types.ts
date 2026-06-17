@@ -162,3 +162,18 @@ export interface AuditResultsResponse {
   running: boolean
   results: AuditResult[]
 }
+
+export interface ExternalSyncStatus {
+  remoteUrl: string
+  branch: string
+  inSync: boolean
+  missing: string[]
+  outOfDate: string[]
+  extra: string[]
+}
+
+export interface ReconcileReport {
+  pushed: string[]
+  removed: string[]
+  errors?: Record<string, string>
+}

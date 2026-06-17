@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter, RouterLink } from 'vue-router'
 import Breadcrumbs from './Breadcrumbs.vue'
@@ -12,10 +12,39 @@ onMounted(() => { auth.ensureMode() })
 
 const isApproved = computed(() => auth.user?.status === 'approved')
 
-// The user-management UI is available to any admin in every auth mode — even
-// OIDC+hd, where new members are auto-admitted but an admin still needs the
-// list to promote/demote other admins. Non-admins never see it.
+// The admin tools (audit, git mirror, user management) are available to any
+// admin in every auth mode — even OIDC+hd, where new members are auto-admitted
+// but an admin still needs the list to promote/demote other admins. Non-admins
+// never see them, so they get a plain static identity label instead of the
+// dropdown trigger.
 const canManageUsers = computed(() => !!auth.user?.isAdmin)
+
+// Admin dropdown: clicking the username reveals the admin destinations rather
+// than crowding the nav bar with a link each.
+const menuOpen = ref(false)
+const menuRef = ref<HTMLElement | null>(null)
+
+function closeMenu() { menuOpen.value = false }
+
+function onDocPointerDown(e: MouseEvent) {
+  if (menuOpen.value && menuRef.value && !menuRef.value.contains(e.target as Node)) {
+    closeMenu()
+  }
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeMenu()
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', onDocPointerDown)
+  document.addEventListener('keydown', onKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onDocPointerDown)
+  document.removeEventListener('keydown', onKeydown)
+})
+// Close on navigation so the panel never lingers over a freshly loaded page.
+watch(() => router.currentRoute.value.fullPath, closeMenu)
 
 function logout() {
   if (auth.doLogout()) return // full-page redirect already in flight
@@ -31,22 +60,33 @@ function logout() {
       <template v-if="auth.user">
         <template v-if="isApproved">
           <RouterLink to="/plugins/new" class="btn">+ New plugin</RouterLink>
-          <RouterLink
-            v-if="auth.user?.isAdmin"
-            to="/audit"
-            class="user-link"
-            title="Skill security audit"
-          >
-            audit
-          </RouterLink>
-          <RouterLink
-            v-if="canManageUsers"
-            to="/users"
-            class="user-link"
-            :title="`Manage users — signed in as ${auth.user.username}`"
-          >
-            <span class="user-link-at" aria-hidden="true">@</span>{{ auth.user.username }}
-          </RouterLink>
+          <div v-if="canManageUsers" ref="menuRef" class="user-menu">
+            <button
+              type="button"
+              class="user-link user-menu__trigger"
+              :class="{ 'user-menu__trigger--open': menuOpen }"
+              aria-haspopup="true"
+              :aria-expanded="menuOpen"
+              :title="`Admin menu — signed in as ${auth.user.username}`"
+              @click="menuOpen = !menuOpen"
+            >
+              <span class="user-link-at" aria-hidden="true">@</span>{{ auth.user.username }}
+              <span class="user-menu__chev" aria-hidden="true">▾</span>
+            </button>
+            <Transition name="navmenu">
+              <div v-if="menuOpen" class="user-menu__panel" role="menu">
+                <RouterLink to="/audit" class="user-menu__item" role="menuitem" @click="closeMenu">
+                  Security audit
+                </RouterLink>
+                <RouterLink to="/external-git" class="user-menu__item" role="menuitem" @click="closeMenu">
+                  Git mirror
+                </RouterLink>
+                <RouterLink to="/users" class="user-menu__item" role="menuitem" @click="closeMenu">
+                  Users
+                </RouterLink>
+              </div>
+            </Transition>
+          </div>
           <span
             v-else
             class="user-link user-link--static"

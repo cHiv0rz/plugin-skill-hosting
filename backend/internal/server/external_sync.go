@@ -2,8 +2,11 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/url"
 	"os"
@@ -167,6 +170,151 @@ func (es *externalSync) pushPlugin(ctx context.Context, pluginName string, rende
 		}
 		return es.commitAndPush(ctx, fmt.Sprintf("Update plugin %s", pluginName))
 	})
+}
+
+// checkPlugins reports how the external mirror diverges from the expected set
+// of plugins, without mutating the remote. It refreshes the local clone from
+// origin, then for each expected plugin renders it into a temp dir (via the
+// caller's DB-backed render) and byte-compares the result against the mirror's
+// plugins/<name>/ subtree:
+//
+//   - missing:   expected plugin has no plugins/<name>/ dir in the mirror
+//   - outOfDate: the dir exists but its contents differ from a fresh render
+//   - extra:     a plugins/<name>/ dir exists with no matching expected plugin
+//
+// The comparison is exact because both the mirror and the temp render are
+// produced by the same deterministic renderer, so an in-sync plugin hashes
+// identically. render(name, dir) must materialise plugin `name` into `dir`.
+func (es *externalSync) checkPlugins(ctx context.Context, names []string, render func(name, dir string) error) (missing, outOfDate, extra []string, err error) {
+	es.mu.Lock()
+	defer es.mu.Unlock()
+
+	if err = es.refreshFromRemote(ctx); err != nil {
+		return nil, nil, nil, err
+	}
+
+	expected := make(map[string]bool, len(names))
+	for _, n := range names {
+		expected[n] = true
+	}
+
+	for _, name := range names {
+		extPath := filepath.Join(es.workDir, "plugins", name)
+		info, statErr := os.Stat(extPath)
+		if errors.Is(statErr, os.ErrNotExist) || (statErr == nil && !info.IsDir()) {
+			missing = append(missing, name)
+			continue
+		}
+		if statErr != nil {
+			return nil, nil, nil, statErr
+		}
+		same, cmpErr := es.renderedMatches(extPath, func(dir string) error {
+			return render(name, dir)
+		})
+		if cmpErr != nil {
+			return nil, nil, nil, cmpErr
+		}
+		if !same {
+			outOfDate = append(outOfDate, name)
+		}
+	}
+
+	dirs, err := es.pluginDirNames()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for _, d := range dirs {
+		if !expected[d] {
+			extra = append(extra, d)
+		}
+	}
+	return missing, outOfDate, extra, nil
+}
+
+// pluginDirNames lists the immediate subdirectories of plugins/ in the local
+// clone. Returns nil (not an error) when the plugins/ dir doesn't exist yet.
+func (es *externalSync) pluginDirNames() ([]string, error) {
+	root := filepath.Join(es.workDir, "plugins")
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
+}
+
+// renderedMatches renders into a throwaway temp dir and reports whether the
+// result is byte-for-byte identical to the tree already at extPath.
+func (es *externalSync) renderedMatches(extPath string, render func(dir string) error) (bool, error) {
+	tmp, err := os.MkdirTemp("", "ext-sync-check-")
+	if err != nil {
+		return false, err
+	}
+	defer os.RemoveAll(tmp)
+	if err := render(tmp); err != nil {
+		return false, fmt.Errorf("render for compare: %w", err)
+	}
+	return dirsEqual(tmp, extPath)
+}
+
+// dirsEqual reports whether two directory trees contain the same set of files
+// with identical contents. Directory entries and file modes are ignored; only
+// the relative path set and per-file bytes matter.
+func dirsEqual(a, b string) (bool, error) {
+	ha, err := hashTree(a)
+	if err != nil {
+		return false, err
+	}
+	hb, err := hashTree(b)
+	if err != nil {
+		return false, err
+	}
+	if len(ha) != len(hb) {
+		return false, nil
+	}
+	for path, sum := range ha {
+		if hb[path] != sum {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// hashTree walks root and returns a map of each regular file's slash-relative
+// path to the hex SHA-256 of its contents. A missing root yields an empty map.
+func hashTree(root string) (map[string]string, error) {
+	out := map[string]string{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, fs.ErrNotExist) && p == root {
+				return nil
+			}
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(b)
+		out[filepath.ToSlash(rel)] = hex.EncodeToString(sum[:])
+		return nil
+	})
+	return out, err
 }
 
 // deletePlugin removes plugins/<name>/ from the local clone, commits, and

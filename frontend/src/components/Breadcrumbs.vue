@@ -18,6 +18,7 @@ const trail = computed<Crumb[]>(() => {
   if (path === '/') return [{ label: HOME.label }]
   if (path === '/users') return [HOME, { label: 'Users' }]
   if (path === '/audit') return [HOME, { label: 'Security audit' }]
+  if (path === '/external-git') return [HOME, { label: 'Git mirror' }]
   if (path === '/developers') return [HOME, { label: 'Developers' }]
   if (path === '/register') return [HOME, { label: 'Sign up' }]
   if (path === '/plugins/new') return [HOME, { label: 'New plugin' }]

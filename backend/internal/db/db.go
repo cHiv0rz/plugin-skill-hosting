@@ -60,6 +60,9 @@ var migration0015 string
 //go:embed migrations/0016_user_theme.sql
 var migration0016 string
 
+//go:embed migrations/0017_skill_version_move_action.sql
+var migration0017 string
+
 // Open opens the application's *sql.DB through pgx's database/sql adapter and
 // configures it for use behind a transaction-pool PgBouncer (the deployment in
 // front of OVH Managed PG, and the common HA layout in general).
@@ -154,6 +157,9 @@ func Migrate(db *sql.DB) error {
 	}
 	if _, err := db.Exec(migration0016); err != nil {
 		return fmt.Errorf("0016_user_theme: %w", err)
+	}
+	if _, err := db.Exec(migration0017); err != nil {
+		return fmt.Errorf("0017_skill_version_move_action: %w", err)
 	}
 	return nil
 }

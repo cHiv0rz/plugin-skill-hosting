@@ -355,6 +355,56 @@ async function deleteSkill() {
   }
 }
 
+// ─── Move skill to another plugin ──────────────────────────────────
+// A move is client-visible: anything referencing the skill at its current
+// <plugin>/<skill> path breaks until it's updated. So we gate it behind an
+// explicit modal (not a native confirm) that names the consequence and makes
+// the user pick the destination deliberately.
+const moveOpen = ref(false)
+const moveTarget = ref('')
+const moving = ref(false)
+const moveError = ref('')
+
+// Active plugins other than the one this skill currently lives in.
+const moveCandidates = computed(() =>
+  pluginStore.list.filter(p => p.name !== props.pluginName),
+)
+
+async function openMove() {
+  moveError.value = ''
+  moveTarget.value = ''
+  moveOpen.value = true
+  try {
+    await pluginStore.loadList()
+  } catch (e: unknown) {
+    moveError.value = errMsg(e)
+  }
+}
+
+function closeMove() {
+  if (moving.value) return
+  moveOpen.value = false
+}
+
+async function confirmMove() {
+  if (!props.skillName || !moveTarget.value) return
+  moving.value = true
+  moveError.value = ''
+  try {
+    const dest = moveTarget.value
+    await api.moveSkill(props.pluginName, props.skillName, dest)
+    moveOpen.value = false
+    // The skill kept its name, just changed home — land the user on it in the
+    // target plugin. bypassGuard so the unsaved-changes prompt doesn't fire.
+    bypassGuard = true
+    router.push(`/plugins/${dest}/skills/${props.skillName}/edit`)
+  } catch (e: unknown) {
+    moveError.value = errMsg(e)
+  } finally {
+    moving.value = false
+  }
+}
+
 async function validate() {
   validationError.value = ''
   validationReport.value = null
@@ -476,6 +526,12 @@ watch(() => [props.pluginName, props.skillName], load)
           @click="deleteSkill"
         >delete</button>
         <button
+          v-if="isEdit"
+          type="button"
+          class="se-btn"
+          @click="openMove"
+        >move</button>
+        <button
           type="button"
           class="se-btn"
           @click="cancel"
@@ -495,24 +551,24 @@ watch(() => [props.pluginName, props.skillName], load)
       </div>
     </header>
 
-    <!-- ZIP import bar (new mode only) -->
+    <!-- ZIP / .skill import bar (new mode only) -->
     <div v-if="!isEdit" class="se-notice">
       <input
         ref="importInput"
         type="file"
-        accept=".zip,application/zip"
+        accept=".zip,.skill,application/zip"
         hidden
         @change="onImportFile"
       />
       <span class="se-notice__text">
-        already packaged as a ZIP? imports <code>SKILL.md</code>, <code>scripts/</code>, <code>references/</code>, <code>assets/</code> in one go.
+        already packaged as a <code>.zip</code> or <code>.skill</code>? imports <code>SKILL.md</code>, <code>scripts/</code>, <code>references/</code>, <code>assets/</code> in one go.
       </span>
       <button
         type="button"
         class="se-btn se-btn--ghost"
         :disabled="importing"
         @click="triggerImport"
-      >{{ importing ? 'importing…' : 'import zip ↗' }}</button>
+      >{{ importing ? 'importing…' : 'import ↗' }}</button>
     </div>
 
     <!-- Tabs (edit mode only) -->
@@ -848,6 +904,72 @@ watch(() => [props.pluginName, props.skillName], load)
       :skill-name="skillName"
       @revert="revert"
     />
+
+    <!-- Move-to-another-plugin modal (edit only) -->
+    <Teleport to="body">
+      <Transition name="confirm">
+        <div
+          v-if="moveOpen"
+          class="se-move-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="se-move-title"
+          @mousedown.self="closeMove"
+        >
+          <div class="se-move">
+            <h3 id="se-move-title" class="se-move__title">Move skill to another plugin</h3>
+            <p class="se-move__path">
+              <code>{{ pluginName }}/{{ skillName }}</code>
+            </p>
+
+            <div class="se-move__warn">
+              <span class="se-move__warn-badge">heads up</span>
+              <p class="se-move__warn-text">
+                This changes where the skill is published. Anyone whose client
+                installs it at <code>{{ pluginName }}/{{ skillName }}</code> will
+                <strong>break</strong> until they re-point to its new plugin.
+                The skill's files and version history move with it.
+              </p>
+            </div>
+
+            <label class="se-move__label" for="se-move-target">destination plugin</label>
+            <select
+              id="se-move-target"
+              v-model="moveTarget"
+              class="se-move__select"
+              :disabled="moving"
+            >
+              <option value="" disabled>select a plugin…</option>
+              <option
+                v-for="p in moveCandidates"
+                :key="p.id"
+                :value="p.name"
+              >{{ p.name }}</option>
+            </select>
+            <p v-if="!moveCandidates.length" class="se-move__empty">
+              no other plugins available — create another plugin first.
+            </p>
+
+            <ErrorAlert :message="moveError" />
+
+            <div class="se-move__actions">
+              <button
+                type="button"
+                class="se-btn"
+                :disabled="moving"
+                @click="closeMove"
+              >cancel</button>
+              <button
+                type="button"
+                class="se-btn se-btn--danger"
+                :disabled="moving || !moveTarget"
+                @click="confirmMove"
+              >{{ moving ? 'moving…' : 'move skill' }}</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -1815,4 +1937,114 @@ watch(() => [props.pluginName, props.skillName], load)
   .se-bar__actions { gap: 4px; }
   .se-btn { padding: 5px 10px; font-size: 11px; }
 }
+
+/* ─── Move modal ───────────────────────────────────────────────── */
+.se-move-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.55);
+}
+.se-move {
+  width: 100%;
+  max-width: 460px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--accent);
+  padding: 20px;
+}
+.se-move__title {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+.se-move__path {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+}
+.se-move__path code {
+  font-family: var(--mono);
+  color: var(--text-soft);
+}
+.se-move__warn {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 18px;
+  border-left: 2px solid var(--rust);
+  background: rgb(var(--rust-rgb) / 0.06);
+}
+.se-move__warn-badge {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rust);
+  border: 1px solid rgb(var(--rust-rgb) / 0.5);
+  padding: 2px 6px;
+}
+.se-move__warn-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-soft);
+}
+.se-move__warn-text code {
+  font-family: var(--mono);
+  color: var(--text);
+}
+.se-move__warn-text strong { color: var(--rust); }
+.se-move__label {
+  display: block;
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+.se-move__select {
+  width: 100%;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 9px 12px;
+  font-family: var(--mono);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.se-move__select:focus { border-color: var(--accent); }
+.se-move__empty {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.se-move__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* Reuse the global "confirm" transition timing for the move modal. */
+.confirm-enter-active,
+.confirm-leave-active { transition: opacity 0.16s ease; }
+.confirm-enter-from,
+.confirm-leave-to { opacity: 0; }
+.confirm-enter-active .se-move,
+.confirm-leave-active .se-move { transition: transform 0.16s ease; }
+.confirm-enter-from .se-move,
+.confirm-leave-to .se-move { transform: translateY(8px); }
 </style>

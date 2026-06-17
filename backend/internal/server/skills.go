@@ -21,6 +21,10 @@ type skillReq struct {
 	ExtraFrontmatter *string `json:"extraFrontmatter,omitempty"`
 }
 
+type moveSkillReq struct {
+	TargetPlugin string `json:"targetPlugin"`
+}
+
 // loadSkillsForPlugin returns active (non-soft-deleted) skills with audit metadata.
 func (a *App) loadSkillsForPlugin(ctx context.Context, pluginID string) ([]Skill, error) {
 	return a.querySkills(ctx, `
@@ -406,6 +410,106 @@ func (a *App) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metrics.SkillMutationsTotal.WithLabelValues("delete", "success").Inc()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleMoveSkill relocates a skill from its current plugin to another one. The
+// skill row keeps its id, so its attached files and version history (both keyed
+// off skill_id) travel with it — only plugin_id changes. Both the source and
+// target plugins bump major and re-materialize, since each one's published
+// skill set changed. This is a client-visible relocation: anything referencing
+// the skill at <source>/<name> must switch to <target>/<name>, which is why the
+// UI gates it behind an explicit confirmation.
+func (a *App) handleMoveSkill(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	src := a.loadActivePluginOrRespond(w, r)
+	if src == nil {
+		return
+	}
+	skill := a.loadActiveSkillOrRespond(w, r, src.ID)
+	if skill == nil {
+		return
+	}
+
+	var req moveSkillReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	target := strings.TrimSpace(strings.ToLower(req.TargetPlugin))
+	if target == "" {
+		writeErr(w, http.StatusBadRequest, "target plugin is required")
+		return
+	}
+	if target == src.Name {
+		writeErr(w, http.StatusBadRequest, "skill is already in that plugin")
+		return
+	}
+
+	dst, err := a.loadPluginByName(r.Context(), target)
+	if err == sql.ErrNoRows {
+		writeErr(w, http.StatusNotFound, "target plugin not found")
+		return
+	}
+	if err != nil {
+		serverErr(w, r, err, "db error")
+		return
+	}
+
+	tx, err := a.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		serverErr(w, r, err, "db error")
+		return
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err := tx.ExecContext(r.Context(), `
+		UPDATE skills SET plugin_id = $1, updated_at = now(), updated_by = $2
+		WHERE id = $3
+	`, dst.ID, user.ID, skill.ID); err != nil {
+		respondDBOrConflict(w, r, err, "an active skill with that name already exists in the target plugin")
+		return
+	}
+	if err := a.recordSkillVersion(r.Context(), tx, skill.ID, "move", skill.Name, skill.Description, skill.Body, skill.ExtraFrontmatter, user.ID); err != nil {
+		serverErr(w, r, err, "db error")
+		return
+	}
+	// Source lost a skill, target gained one — both published surfaces changed,
+	// so bump both major within the transaction.
+	if err := a.bumpAndPersistPluginVersion(r.Context(), tx, src, semver.BumpMajor); err != nil {
+		serverErr(w, r, err, "db error")
+		return
+	}
+	if err := a.bumpAndPersistPluginVersion(r.Context(), tx, dst, semver.BumpMajor); err != nil {
+		serverErr(w, r, err, "db error")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		serverErr(w, r, err, "db error")
+		return
+	}
+	committed = true
+
+	// Regenerate both git repos so each reflects the moved skill.
+	if err := a.materializePluginDetached(src); err != nil {
+		writeErr(w, http.StatusInternalServerError, "git materialize: "+err.Error())
+		return
+	}
+	if err := a.materializePluginDetached(dst); err != nil {
+		writeErr(w, http.StatusInternalServerError, "git materialize: "+err.Error())
+		return
+	}
+
+	metrics.SkillMutationsTotal.WithLabelValues("move", "success").Inc()
+	if s, err := a.loadSkillByID(r.Context(), skill.ID); err == nil {
+		writeJSON(w, http.StatusOK, s)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -99,7 +99,7 @@ const mcpJsonConfig = computed(() => JSON.stringify({
 }, null, 2))
 
 // ─── Enterprise / team walkthrough ──────────────────────────────────
-// Screenshots live in src/assets/enterprise/ (step-1…step-4); import.meta.glob
+// Screenshots live in src/assets/enterprise/ (step-1…step-6); import.meta.glob
 // resolves whatever is present, so a missing file never breaks the build and a
 // new screenshot shows up the moment it's dropped in.
 const shotUrls = import.meta.glob('../assets/enterprise/*.{png,jpg,jpeg,webp}', {
@@ -110,9 +110,9 @@ function shot(file: string): string | undefined {
   return shotUrls[`../assets/enterprise/${file}`]
 }
 
-// The flow a team member sees in the Claude app: your org has already connected
-// this marketplace, so the plugins, skills and MCP server are just there — these
-// steps show where to find them. Nothing to install or paste.
+// The flow a team member sees in the Claude app. Steps 1–3 cover enabling the
+// MCP connector your org publishes; steps 4–6 cover installing one of your
+// organization's plugins. Nothing to paste — it's all point-and-click.
 const steps = [
   {
     img: 'step-1.png',
@@ -130,19 +130,36 @@ const steps = [
   },
   {
     img: 'step-3.png',
-    title: 'the MCP connector is already there',
-    body: 'under Connectors you\'ll find this marketplace\'s server already ' +
-      'connected. it lets Claude read plugins and create or update skills — the ' +
-      'tool permissions are listed so you can see exactly what it can do.',
+    title: 'connect the MCP server',
+    body: 'under Connectors, open this marketplace\'s server and connect it — the ' +
+      'first time, you\'ll be asked to sign in to authorize the connection. once ' +
+      'authentication succeeds it shows as connected, like in the screenshot. it ' +
+      'lets Claude read plugins and create or update skills, with the tool ' +
+      'permissions listed so you can see exactly what it can do.',
     note: '',
   },
   {
     img: 'step-4.png',
-    title: 'your skills are ready to use',
-    body: 'under Skills, the skills from your organization\'s plugins show up ' +
-      'automatically — pick one to see its description and trigger, and it\'s live ' +
-      'right away.',
-    note: 'skills run in Cowork and Code — not in Chat.',
+    title: 'open the plugin directory',
+    body: 'to add a plugin, click the + at the top of the Customize panel and ' +
+      'choose Browse — this opens the directory of everything available to you.',
+    note: '',
+  },
+  {
+    img: 'step-5.png',
+    title: 'add a plugin from your organization',
+    body: 'in the directory, select Plugins and stay on the "Your organization" ' +
+      'tab. find the plugin you want and click its + to add it — these are the ' +
+      'plugins your admin has published for the team.',
+    note: '',
+  },
+  {
+    img: 'step-6.png',
+    title: 'the plugin and its skills are ready',
+    body: 'the plugin now shows under "Organization plugins" in the sidebar, and ' +
+      'any skills it bundles appear under Skills — pick one to see its description ' +
+      'and trigger, and it\'s live right away.',
+    note: '',
   },
 ] as const
 
@@ -363,9 +380,9 @@ onMounted(load)
       <template v-if="auth.enterpriseMode && !expertMode">
         <p class="pl-lead">
           your admin connects this marketplace once at the <strong>organization</strong>
-          level, so its plugins, skills and MCP server just show up in everyone's Claude —
-          there's nothing to install. here's where to find them (click any screenshot to
-          enlarge):
+          level, so the MCP server is already there and your team's plugins are ready to
+          add — nothing to paste. steps 1–3 show how to find the connector; steps 4–6 how
+          to install a plugin (click any screenshot to enlarge):
         </p>
 
         <ol class="pl-steps">

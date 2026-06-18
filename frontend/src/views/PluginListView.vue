@@ -10,10 +10,47 @@ import { storeToRefs } from 'pinia'
 
 const { confirm } = useConfirm()
 
+// ─── Sortable plugin table ──────────────────────────────────────────
+type PluginSortKey = 'name' | 'description' | 'ownerName' | 'version'
+const pluginColumns: { key: PluginSortKey; label: string; class?: string }[] = [
+  { key: 'name', label: 'name' },
+  { key: 'description', label: 'description' },
+  { key: 'ownerName', label: 'owner' },
+  { key: 'version', label: 'ver' },
+]
+const sortKey = ref<PluginSortKey>('name')
+const sortAsc = ref(true)
+function toggleSort(key: PluginSortKey) {
+  if (sortKey.value === key) sortAsc.value = !sortAsc.value
+  else { sortKey.value = key; sortAsc.value = true }
+}
+
 const router = useRouter()
 const auth = useAuthStore()
 const pluginStore = usePluginStore()
 const { list: plugins, deleted: deletedPlugins } = storeToRefs(pluginStore)
+
+const search = ref('')
+
+const sortedPlugins = computed(() => {
+  const key = sortKey.value
+  const dir = sortAsc.value ? 1 : -1
+  return [...plugins.value].sort((a, b) => {
+    const av = (a[key] ?? '').toString()
+    const bv = (b[key] ?? '').toString()
+    return av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' }) * dir
+  })
+})
+
+// Search across every visible column, case-insensitive "contains".
+const visiblePlugins = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return sortedPlugins.value
+  return sortedPlugins.value.filter((p) =>
+    pluginColumns.some((col) => (p[col.key] ?? '').toString().toLowerCase().includes(q)),
+  )
+})
+
 const loading = ref(true)
 const error = ref('')
 const tokenError = ref('')
@@ -239,26 +276,48 @@ onMounted(load)
         </div>
       </div>
 
-      <table v-else class="pl-table">
-        <thead>
-          <tr>
-            <th>name</th>
-            <th>description</th>
-            <th>owner</th>
-            <th>ver</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in plugins" :key="p.id">
-            <td class="pl-table__name">
-              <RouterLink :to="`/plugins/${p.name}`">{{ p.name }}</RouterLink>
-            </td>
-            <td class="pl-table__desc">{{ p.description }}</td>
-            <td class="pl-table__owner">{{ p.ownerName }}</td>
-            <td class="pl-table__ver"><span class="pl-ver">{{ p.version }}</span></td>
-          </tr>
-        </tbody>
-      </table>
+      <template v-else>
+        <div class="pl-search">
+          <input
+            v-model="search"
+            type="search"
+            class="pl-search__input"
+            placeholder="search plugins…"
+            aria-label="search plugins"
+          />
+          <span v-if="search" class="pl-search__count">{{ visiblePlugins.length }} / {{ plugins.length }}</span>
+        </div>
+
+        <table class="pl-table">
+          <thead>
+            <tr>
+              <th
+                v-for="col in pluginColumns"
+                :key="col.key"
+                class="pl-th pl-th--sortable"
+                :aria-sort="sortKey === col.key ? (sortAsc ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort(col.key)"
+              >
+                <span class="pl-th__label">{{ col.label }}</span>
+                <span class="pl-th__arrow" :class="{ 'pl-th__arrow--active': sortKey === col.key }" aria-hidden="true">{{ sortKey === col.key ? (sortAsc ? '▲' : '▼') : '↕' }}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in visiblePlugins" :key="p.id">
+              <td class="pl-table__name">
+                <RouterLink :to="`/plugins/${p.name}`">{{ p.name }}</RouterLink>
+              </td>
+              <td class="pl-table__desc">{{ p.description }}</td>
+              <td class="pl-table__owner">{{ p.ownerName }}</td>
+              <td class="pl-table__ver"><span class="pl-ver">{{ p.version }}</span></td>
+            </tr>
+            <tr v-if="visiblePlugins.length === 0">
+              <td :colspan="pluginColumns.length" class="pl-table__none">no plugins match “{{ search }}”</td>
+            </tr>
+          </tbody>
+        </table>
+      </template>
 
       <details v-if="deletedPlugins.length > 0" class="pl-disclosure">
         <summary class="pl-disclosure__head">
@@ -640,6 +699,41 @@ onMounted(load)
   border-color: var(--rust);
 }
 
+/* ─── Search ───────────────────────────────────────────────────── */
+.pl-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.pl-search__input {
+  flex: 1 1 280px;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 7px 11px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.pl-search__input:focus { border-color: var(--accent); }
+.pl-search__input::placeholder { color: var(--muted); }
+.pl-search__count {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.pl-table__none {
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
+}
+
 /* ─── Plugin table ─────────────────────────────────────────────── */
 .pl-table {
   width: 100%;
@@ -661,6 +755,23 @@ onMounted(load)
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
+.pl-th--sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.pl-th--sortable:hover {
+  color: var(--text);
+  background: rgb(var(--accent-rgb) / 0.05);
+}
+.pl-th__arrow {
+  margin-left: 6px;
+  font-size: 9px;
+  color: var(--border);
+  letter-spacing: 0;
+}
+.pl-th__arrow--active { color: var(--accent); }
 .pl-table td {
   padding: 11px 14px;
   border-bottom: 1px solid var(--border-soft);

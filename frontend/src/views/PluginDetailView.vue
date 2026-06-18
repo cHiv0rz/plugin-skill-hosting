@@ -18,6 +18,45 @@ const auth = useAuthStore()
 const pluginStore = usePluginStore()
 const { current: plugin } = storeToRefs(pluginStore)
 const deletedSkills = ref<Skill[]>([])
+
+// ─── Sortable skills table ──────────────────────────────────────────
+type SkillSortKey = 'name' | 'description' | 'updatedAt'
+const skillColumns: { key: SkillSortKey; label: string }[] = [
+  { key: 'name', label: 'name' },
+  { key: 'description', label: 'description' },
+  { key: 'updatedAt', label: 'updated' },
+]
+const sortKey = ref<SkillSortKey>('name')
+const sortAsc = ref(true)
+function toggleSort(key: SkillSortKey) {
+  if (sortKey.value === key) sortAsc.value = !sortAsc.value
+  else { sortKey.value = key; sortAsc.value = true }
+}
+const search = ref('')
+
+const sortedSkills = computed(() => {
+  const key = sortKey.value
+  const dir = sortAsc.value ? 1 : -1
+  return [...(plugin.value?.skills ?? [])].sort((a, b) => {
+    const av = (a[key] ?? '').toString()
+    const bv = (b[key] ?? '').toString()
+    return av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' }) * dir
+  })
+})
+
+// Search across every visible column, case-insensitive "contains". The
+// updated column matches its displayed (formatted) text, not the raw ISO.
+const visibleSkills = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return sortedSkills.value
+  return sortedSkills.value.filter((s) =>
+    skillColumns.some((col) => {
+      const raw = (s[col.key] ?? '').toString()
+      const text = col.key === 'updatedAt' ? fmt(raw) : raw
+      return text.toLowerCase().includes(q)
+    }),
+  )
+})
 const loading = ref(true)
 const error = ref('')
 // When the *initial load* fails (missing plugin, server error) we take over
@@ -61,6 +100,14 @@ const installCmd = computed(() => {
 function fmt(d?: string | null) {
   if (!d) return ''
   return new Date(d).toLocaleString()
+}
+function fmtDate(d?: string | null) {
+  if (!d) return ''
+  return new Date(d).toLocaleDateString()
+}
+function fmtTime(d?: string | null) {
+  if (!d) return ''
+  return new Date(d).toLocaleTimeString()
 }
 
 async function copy(text: string, label: string) {
@@ -242,26 +289,54 @@ watch(() => route.params.name, load)
         </p>
       </div>
 
-      <table v-else class="pd-table">
-        <thead>
-          <tr>
-            <th>name</th>
-            <th>description</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in plugin.skills" :key="s.id">
-            <td class="pd-table__name">
-              <RouterLink
-                v-if="isAuthed"
-                :to="`/plugins/${plugin.name}/skills/${s.name}/edit`"
-              >{{ s.name }}</RouterLink>
-              <span v-else>{{ s.name }}</span>
-            </td>
-            <td class="pd-table__desc">{{ s.description }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <template v-else>
+        <div class="pd-search">
+          <input
+            v-model="search"
+            type="search"
+            class="pd-search__input"
+            placeholder="search skills…"
+            aria-label="search skills"
+          />
+          <span v-if="search" class="pd-search__count">{{ visibleSkills.length }} / {{ plugin.skills.length }}</span>
+        </div>
+
+        <table class="pd-table">
+          <thead>
+            <tr>
+              <th
+                v-for="col in skillColumns"
+                :key="col.key"
+                class="pd-th pd-th--sortable"
+                :aria-sort="sortKey === col.key ? (sortAsc ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort(col.key)"
+              >
+                <span class="pd-th__label">{{ col.label }}</span>
+                <span class="pd-th__arrow" :class="{ 'pd-th__arrow--active': sortKey === col.key }" aria-hidden="true">{{ sortKey === col.key ? (sortAsc ? '▲' : '▼') : '↕' }}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in visibleSkills" :key="s.id">
+              <td class="pd-table__name">
+                <RouterLink
+                  v-if="isAuthed"
+                  :to="`/plugins/${plugin.name}/skills/${s.name}/edit`"
+                >{{ s.name }}</RouterLink>
+                <span v-else>{{ s.name }}</span>
+              </td>
+              <td class="pd-table__desc">{{ s.description }}</td>
+              <td class="pd-table__when">
+                <span class="pd-table__when-date">{{ fmtDate(s.updatedAt) }}</span>
+                <span class="pd-table__when-time">{{ fmtTime(s.updatedAt) }}</span>
+              </td>
+            </tr>
+            <tr v-if="visibleSkills.length === 0">
+              <td :colspan="skillColumns.length" class="pd-table__none">no skills match “{{ search }}”</td>
+            </tr>
+          </tbody>
+        </table>
+      </template>
 
       <details v-if="deletedSkills.length > 0" class="pd-disclosure">
         <summary class="pd-disclosure__head">
@@ -647,6 +722,41 @@ watch(() => route.params.name, load)
   color: var(--muted);
 }
 
+/* ─── Search ───────────────────────────────────────────────────── */
+.pd-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.pd-search__input {
+  flex: 1 1 280px;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 7px 11px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.pd-search__input:focus { border-color: var(--accent); }
+.pd-search__input::placeholder { color: var(--muted); }
+.pd-search__count {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.pd-table__none {
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
+}
+
 /* ─── Tables (matches portal page) ─────────────────────────────── */
 .pd-table {
   width: 100%;
@@ -668,6 +778,23 @@ watch(() => route.params.name, load)
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
+.pd-th--sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.pd-th--sortable:hover {
+  color: var(--text);
+  background: rgb(var(--accent-rgb) / 0.05);
+}
+.pd-th__arrow {
+  margin-left: 6px;
+  font-size: 9px;
+  color: var(--border);
+  letter-spacing: 0;
+}
+.pd-th__arrow--active { color: var(--accent); }
 .pd-table td {
   padding: 11px 14px;
   border-bottom: 1px solid var(--border-soft);
@@ -700,7 +827,8 @@ watch(() => route.params.name, load)
   font-size: 11.5px;
   white-space: nowrap;
 }
-.pd-table__when-time { display: block; font-size: 10.5px; }
+.pd-table__when-date { display: block; }
+.pd-table__when-time { display: block; font-size: 10.5px; opacity: 0.8; }
 .pd-table__act { text-align: right; width: 1%; white-space: nowrap; }
 .pd-table--nested { margin: 0; }
 

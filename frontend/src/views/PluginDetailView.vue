@@ -45,6 +45,9 @@ const editForm = ref({
 const isOwner = computed(() =>
   !!(plugin.value && auth.user && plugin.value.ownerId === auth.user.id),
 )
+const isAdmin = computed(() => !!auth.user?.isAdmin)
+// Owners manage their own plugins; admins can manage (edit/delete) any plugin.
+const canManage = computed(() => isOwner.value || isAdmin.value)
 const isAuthed = computed(() => !!auth.user)
 
 const installCmd = computed(() => {
@@ -176,13 +179,13 @@ watch(() => route.params.name, load)
       </div>
       <div class="pd-bar__actions">
         <button
-          v-if="isOwner && !editing"
+          v-if="canManage && !editing"
           type="button"
           class="pd-btn"
           @click="startEdit"
         >edit metadata</button>
         <button
-          v-if="isOwner"
+          v-if="canManage"
           type="button"
           class="pd-btn pd-btn--danger"
           @click="deletePlugin"

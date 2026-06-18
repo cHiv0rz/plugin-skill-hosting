@@ -130,6 +130,80 @@ func TestUpdatePlugin_NotOwner_Integration(t *testing.T) {
 	}
 }
 
+// TestUpdatePlugin_AdminOverride_Integration confirms an admin can edit the
+// metadata of a plugin they don't own, while a non-admin non-owner cannot.
+func TestUpdatePlugin_AdminOverride_Integration(t *testing.T) {
+	pool := requireTestDB(t)
+	app := newIntegrationApp(t, pool)
+	owner := seedUser(t, pool, "meta-owner", false)
+	intruder := seedUser(t, pool, "meta-intruder", false)
+	admin := seedUser(t, pool, "meta-admin", true)
+
+	const name = "admin-editable-plugin"
+	rec := httptest.NewRecorder()
+	app.handleCreatePlugin(rec, authedReq(http.MethodPost, "/api/plugins",
+		`{"name":"`+name+`","description":"mine"}`, owner))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200; body=%s", rec.Code, readBody(rec))
+	}
+
+	// A non-admin who doesn't own the plugin is still refused.
+	rec = httptest.NewRecorder()
+	app.handleUpdatePlugin(rec, authedReq(http.MethodPut, "/api/plugins/"+name,
+		`{"description":"hijacked"}`, intruder, "name", name))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("intruder update status = %d, want 403; body=%s", rec.Code, readBody(rec))
+	}
+
+	// An admin can edit it even though they're not the owner.
+	rec = httptest.NewRecorder()
+	app.handleUpdatePlugin(rec, authedReq(http.MethodPut, "/api/plugins/"+name,
+		`{"description":"by admin","authorName":"Ann"}`, admin, "name", name))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin update status = %d, want 200; body=%s", rec.Code, readBody(rec))
+	}
+	var updated Plugin
+	_ = json.Unmarshal(rec.Body.Bytes(), &updated)
+	if updated.Description != "by admin" {
+		t.Errorf("updated description = %q, want \"by admin\"", updated.Description)
+	}
+}
+
+// TestDeletePlugin_AdminOverride_Integration confirms an admin can delete a
+// plugin they don't own, while a non-admin non-owner still gets a 403.
+func TestDeletePlugin_AdminOverride_Integration(t *testing.T) {
+	pool := requireTestDB(t)
+	app := newIntegrationApp(t, pool)
+	owner := seedUser(t, pool, "del-owner", false)
+	intruder := seedUser(t, pool, "del-intruder", false)
+	admin := seedUser(t, pool, "del-admin", true)
+
+	const name = "admin-deletable-plugin"
+	rec := httptest.NewRecorder()
+	app.handleCreatePlugin(rec, authedReq(http.MethodPost, "/api/plugins",
+		`{"name":"`+name+`","description":"mine"}`, owner))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200; body=%s", rec.Code, readBody(rec))
+	}
+
+	// A non-admin who doesn't own the plugin is still refused.
+	rec = httptest.NewRecorder()
+	app.handleDeletePlugin(rec, authedReq(http.MethodDelete, "/api/plugins/"+name, "", intruder, "name", name))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("intruder delete status = %d, want 403; body=%s", rec.Code, readBody(rec))
+	}
+
+	// An admin can delete it even though they're not the owner.
+	rec = httptest.NewRecorder()
+	app.handleDeletePlugin(rec, authedReq(http.MethodDelete, "/api/plugins/"+name, "", admin, "name", name))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("admin delete status = %d, want 204; body=%s", rec.Code, readBody(rec))
+	}
+	if n := app.countOwnerPlugins(t, owner.ID); n != 0 {
+		t.Errorf("active plugin count after admin delete = %d, want 0", n)
+	}
+}
+
 // countOwnerPlugins returns the number of non-deleted plugins owned by ownerID.
 func (a *App) countOwnerPlugins(t *testing.T, ownerID string) int {
 	t.Helper()

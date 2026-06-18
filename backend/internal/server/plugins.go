@@ -248,7 +248,7 @@ func (a *App) handleUpdatePlugin(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	if p.OwnerID != user.ID {
+	if p.OwnerID != user.ID && !user.IsAdmin {
 		writeErr(w, http.StatusForbidden, "not your plugin")
 		return
 	}
@@ -301,7 +301,7 @@ func (a *App) handleDeletePlugin(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	if p.OwnerID != user.ID {
+	if p.OwnerID != user.ID && !user.IsAdmin {
 		writeErr(w, http.StatusForbidden, "not your plugin")
 		return
 	}
